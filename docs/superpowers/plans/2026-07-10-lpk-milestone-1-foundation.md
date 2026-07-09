@@ -98,8 +98,6 @@ Create go.mod:
 
     go 1.24.0
 
-    require go.yaml.in/yaml/v3 v3.0.4
-
 Implement errors.go with:
 
     package lpkgo
@@ -320,7 +318,7 @@ Expected: all tests and vet pass.
 
 Run:
 
-    git add go.mod go.sum errors.go errors_test.go warning.go version docs/superpowers/specs/2026-07-10-lpk-lifecycle-library-design.md
+    git add go.mod errors.go errors_test.go warning.go version docs/superpowers/specs/2026-07-10-lpk-lifecycle-library-design.md docs/superpowers/plans/2026-07-10-lpk-milestone-1-foundation.md
     git commit -m "feat: add SDK contracts and compatibility version"
 
 ---
@@ -476,7 +474,7 @@ Implement workflow/workflow.go with:
             }
             p.emit(ctx, Event{Stage: step.Name(), Kind: EventStarted})
             if err := step.Run(ctx, state); err != nil {
-                p.emit(ctx, Event{Stage: step.Name(), Kind: EventFailed, Message: err.Error()})
+                p.emit(ctx, Event{Stage: step.Name(), Kind: EventFailed, Message: "stage failed"})
                 return err
             }
             p.emit(ctx, Event{Stage: step.Name(), Kind: EventCompleted})
@@ -833,6 +831,8 @@ Commit:
 - Create: manifest/types.go
 - Create: manifest/package_info.go
 - Create: manifest/package_info_test.go
+- Modify: go.mod
+- Create: go.sum
 
 **Interfaces:**
 
@@ -861,6 +861,10 @@ Run:
 Expected failure: manifest package does not exist.
 
 - [ ] **Step 3: Implement Document**
+
+Add the pinned YAML dependency:
+
+    go get go.yaml.in/yaml/v3@v3.0.4
 
 Document stores an unexported yaml.Node. Parse uses yaml.Decoder with one
 document and rejects trailing non-empty YAML documents. Bytes uses
