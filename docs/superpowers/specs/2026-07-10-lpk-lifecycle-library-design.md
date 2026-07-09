@@ -2,7 +2,7 @@
 
 Date: 2026-07-10
 
-Status: Awaiting written review
+Status: Approved
 
 Module: github.com/lib-x/lpk-go
 
