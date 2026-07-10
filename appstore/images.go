@@ -36,6 +36,7 @@ type CopyImageResult struct {
 	SourceImage  string
 	Platform     string
 	LazyCatImage string
+	Progress     CopyProgress
 }
 
 type ImageRecord struct {
@@ -103,7 +104,7 @@ func (client *Client) CopyImage(ctx context.Context, input CopyImageRequest) (Co
 			if strings.TrimSpace(payload.Image) == "" {
 				return CopyImageResult{}, storeRemoteError("appstore.copy_image", errors.New("copy result image is missing"), http.StatusOK)
 			}
-			return CopyImageResult{SourceImage: image, Platform: platform, LazyCatImage: payload.Image}, nil
+			return CopyImageResult{SourceImage: image, Platform: platform, LazyCatImage: payload.Image, Progress: progress}, nil
 		}
 		timer := time.NewTimer(client.pollInterval)
 		select {

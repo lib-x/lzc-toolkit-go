@@ -49,7 +49,7 @@ func TestCopyImageUsesServerSideReferenceProtocol(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.LazyCatImage != "registry.lazycat.cloud/demo:1" || len(updates) != 2 || progressCalls != 2 {
+	if result.LazyCatImage != "registry.lazycat.cloud/demo:1" || !result.Progress.Finished || len(result.Progress.Layers) != 1 || len(updates) != 2 || progressCalls != 2 {
 		t.Fatalf("result=%#v updates=%#v calls=%d", result, updates, progressCalls)
 	}
 }

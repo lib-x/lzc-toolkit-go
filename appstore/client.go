@@ -15,23 +15,26 @@ import (
 )
 
 const (
-	DefaultBaseURL      = "https://appstore.api.lazycat.cloud"
-	defaultPollInterval = time.Second
-	maxResponseBytes    = 4 << 20
+	DefaultBaseURL       = "https://appstore.api.lazycat.cloud"
+	DefaultTestflightURL = "https://testflight.lazycat.cloud/api"
+	defaultPollInterval  = time.Second
+	maxResponseBytes     = 4 << 20
 )
 
 type Options struct {
-	BaseURL      string
-	HTTPClient   *http.Client
-	Token        auth.TokenProvider
-	PollInterval time.Duration
+	BaseURL       string
+	HTTPClient    *http.Client
+	Token         auth.TokenProvider
+	PollInterval  time.Duration
+	TestflightURL string
 }
 
 type Client struct {
-	baseURL      string
-	httpClient   *http.Client
-	token        auth.TokenProvider
-	pollInterval time.Duration
+	baseURL       string
+	httpClient    *http.Client
+	token         auth.TokenProvider
+	pollInterval  time.Duration
+	testflightURL string
 }
 
 func New(options Options) *Client {
@@ -47,10 +50,18 @@ func New(options Options) *Client {
 	if interval <= 0 {
 		interval = defaultPollInterval
 	}
-	return &Client{baseURL: baseURL, httpClient: httpClient, token: options.Token, pollInterval: interval}
+	testflightURL := strings.TrimRight(strings.TrimSpace(options.TestflightURL), "/")
+	if testflightURL == "" {
+		testflightURL = DefaultTestflightURL
+	}
+	return &Client{baseURL: baseURL, testflightURL: testflightURL, httpClient: httpClient, token: options.Token, pollInterval: interval}
 }
 
 func (client *Client) newRequest(ctx context.Context, method, endpoint string) (*http.Request, error) {
+	return client.newRequestAt(ctx, method, client.baseURL+endpoint, nil)
+}
+
+func (client *Client) newRequestAt(ctx context.Context, method, target string, body io.Reader) (*http.Request, error) {
 	if ctx == nil || client == nil || client.httpClient == nil || client.token == nil {
 		return nil, storeError(lpkgo.CodeInvalidArgument, "appstore.request", errors.New("nil context, client, or token provider"))
 	}
@@ -58,7 +69,7 @@ func (client *Client) newRequest(ctx context.Context, method, endpoint string) (
 	if err != nil {
 		return nil, err
 	}
-	request, err := http.NewRequestWithContext(ctx, method, client.baseURL+endpoint, nil)
+	request, err := http.NewRequestWithContext(ctx, method, target, body)
 	if err != nil {
 		return nil, storeError(lpkgo.CodeInvalidArgument, "appstore.request", err)
 	}
