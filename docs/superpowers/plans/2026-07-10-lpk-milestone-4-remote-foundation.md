@@ -114,7 +114,32 @@
 
   Run `go test ./remote/blobcache -count=1`, `go test -race ./remote/blobcache`, and `go vet ./remote/blobcache`; commit as `feat: add verified remote blob cache`.
 
-### Task 4: Remote build-pack image adapter
+### Task 4: DebugBridge image and blob protocol adapter
+
+**Files:**
+- Create: `remote/images.go`
+- Create: `remote/debugbridge/client.go`
+- Create: `remote/debugbridge/images.go`
+- Create: `remote/debugbridge/images_test.go`
+
+**Interfaces:**
+- Consumes `remote.Runner` and a bridge command factory such as `ssh.Runner.BridgeCommand`.
+- Produces `remote.ImageBackend`, `remote.BuildPackRequest`, `remote.BuildPackResult`, `remote.PackImageSpec`, `remote.PackManifest`, and `debugbridge.Client`.
+- `debugbridge.Client` implements backend info, `build-pack`, `pack-images --manifest-only`, `blob-check`, and streaming `blob-get` using the exact DebugBridge argv.
+
+- [ ] **Step 1: Write fake-runner protocol tests**
+
+  Assert version/platform JSON parsing, build context streaming and context digest argv, last-line build-pack JSON selection, base64 pack spec fields, blob-check missing digests, blob-get streaming, malformed JSON rejection, and bounded stable errors.
+
+- [ ] **Step 2: Implement the typed protocol adapter**
+
+  Validate every digest, platform, descriptor, lock entry, and blob result as untrusted input. Do not expose stdout/stderr in error strings and do not close caller readers/writers.
+
+- [ ] **Step 3: Verify and commit**
+
+  Run `go test ./remote/debugbridge -count=1`, `go test -race ./remote/debugbridge`, `go vet ./remote/...`, and the import boundary check; commit as `feat: add DebugBridge image protocol`.
+
+### Task 5: Remote build-pack image adapter
 
 **Files:**
 - Create: `image/buildpack/backend.go`
@@ -147,7 +172,7 @@
 
   Run `go test ./image/buildpack -count=1`, `go test -race ./image/buildpack`, `go vet ./image/buildpack`, and the import boundary script; commit as `feat: add remote build-pack image adapter`.
 
-### Task 5: ShellAPI generated client and discovery adapter
+### Task 6: ShellAPI generated client and discovery adapter
 
 **Files:**
 - Create: `remote/shellapi/shellapi.proto`
@@ -185,7 +210,7 @@
 
   Run `go test ./remote/shellapi -count=1`, `go test -race ./remote/shellapi`, `go vet ./remote/shellapi`, `go mod tidy`, and the import boundary script; commit as `feat: add ShellAPI discovery client`.
 
-### Task 6: Milestone 4 remote foundation verification and delivery
+### Task 7: Milestone 4 remote foundation verification and delivery
 
 **Files:**
 - Modify: `README.md`
