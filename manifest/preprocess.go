@@ -50,14 +50,21 @@ type preprocessOptions struct {
 	context     context.Context
 }
 
-// Preprocess evaluates build directives in input.
-func Preprocess(sourceName string, input []byte, context BuildContext, includes fs.FS) ([]byte, error) {
+// Preprocess evaluates build directives in input. A live context is required
+// and is checked throughout line processing and include reads.
+func Preprocess(ctx context.Context, sourceName string, input []byte, buildContext BuildContext, includes fs.FS) ([]byte, error) {
 	if sourceName == "" {
 		sourceName = "<manifest>"
 	}
-	context.Profile = strings.TrimSpace(context.Profile)
-	context.Env = cloneEnvironment(context.Env)
-	for key := range context.Env {
+	if err := preprocessContextError(ctx, "manifest.preprocess", sourceName); err != nil {
+		return nil, err
+	}
+	buildContext.Profile = strings.TrimSpace(buildContext.Profile)
+	buildContext.Env = cloneEnvironment(buildContext.Env)
+	for key := range buildContext.Env {
+		if err := preprocessContextError(ctx, "manifest.preprocess", sourceName); err != nil {
+			return nil, err
+		}
 		if !environmentKeyPattern.MatchString(key) {
 			return nil, directiveError(sourceName, 0, "manifest.preprocess.environment")
 		}
@@ -66,41 +73,57 @@ func Preprocess(sourceName string, input []byte, context BuildContext, includes 
 		includes:    includes,
 		includeRoot: path.Dir(sourceName),
 		displayRoot: path.Dir(sourceName),
+		context:     ctx,
 	}
-	return processManifestText(sourceName, string(input), context, options, true)
+	return processManifestText(sourceName, string(input), buildContext, options, true)
 }
 
-// PreprocessFile reads and preprocesses filename without retaining an open
-// file descriptor. Cancellation is checked immediately before and after the
-// source read.
-func PreprocessFile(ctx context.Context, filename string, buildContext BuildContext) ([]byte, error) {
-	if err := preprocessContextError(ctx, filename); err != nil {
+// PreprocessFile resolves filename, confines source and include reads to one
+// rooted directory, and checks cancellation throughout preprocessing.
+func PreprocessFile(ctx context.Context, filename string, buildContext BuildContext) (output []byte, resultErr error) {
+	if err := preprocessContextError(ctx, "manifest.preprocess_file", filename); err != nil {
 		return nil, err
 	}
-	input, err := os.ReadFile(filename)
+	resolvedFilename, err := filepath.Abs(filename)
 	if err != nil {
-		return nil, &lpkgo.Error{Code: lpkgo.CodeInvalidManifest, Op: "manifest.preprocess_file", Path: filepath.ToSlash(filename), Cause: errors.New("manifest source read failed")}
+		return nil, &lpkgo.Error{Code: lpkgo.CodeInvalidManifest, Op: "manifest.preprocess_file", Path: filepath.ToSlash(filename), Cause: errors.New("manifest source path resolution failed")}
 	}
-	if err := preprocessContextError(ctx, filename); err != nil {
+	resolvedFilename = filepath.Clean(resolvedFilename)
+	sourceName := filepath.ToSlash(resolvedFilename)
+	if err := preprocessContextError(ctx, "manifest.preprocess_file", sourceName); err != nil {
+		return nil, err
+	}
+	root, err := os.OpenRoot(filepath.Dir(resolvedFilename))
+	if err != nil {
+		return nil, &lpkgo.Error{Code: lpkgo.CodeInvalidManifest, Op: "manifest.preprocess_file", Path: sourceName, Cause: errors.New("manifest source root open failed")}
+	}
+	defer func() {
+		if err := root.Close(); err != nil && resultErr == nil {
+			output = nil
+			resultErr = &lpkgo.Error{Code: lpkgo.CodeInvalidManifest, Op: "manifest.preprocess_file.close", Path: sourceName, Cause: errors.New("manifest source root close failed")}
+		}
+	}()
+	input, err := root.ReadFile(filepath.Base(resolvedFilename))
+	if err != nil {
+		return nil, &lpkgo.Error{Code: lpkgo.CodeInvalidManifest, Op: "manifest.preprocess_file", Path: sourceName, Cause: errors.New("manifest source read failed")}
+	}
+	if err := preprocessContextError(ctx, "manifest.preprocess_file", sourceName); err != nil {
 		return nil, err
 	}
 	buildContext.Profile = strings.TrimSpace(buildContext.Profile)
 	buildContext.Env = cloneEnvironment(buildContext.Env)
-	sourceName := filepath.ToSlash(filename)
 	for key := range buildContext.Env {
+		if err := preprocessContextError(ctx, "manifest.preprocess_file", sourceName); err != nil {
+			return nil, err
+		}
 		if !environmentKeyPattern.MatchString(key) {
 			return nil, directiveError(sourceName, 0, "manifest.preprocess.environment")
 		}
 	}
-	root, err := os.OpenRoot(filepath.Dir(filename))
-	if err != nil {
-		return nil, &lpkgo.Error{Code: lpkgo.CodeInvalidManifest, Op: "manifest.preprocess_file", Path: sourceName, Cause: errors.New("manifest include root open failed")}
-	}
-	defer root.Close()
 	return processManifestText(sourceName, string(input), buildContext, preprocessOptions{
 		includes:    root.FS(),
 		includeRoot: ".",
-		displayRoot: filepath.ToSlash(filepath.Dir(filename)),
+		displayRoot: filepath.ToSlash(filepath.Dir(resolvedFilename)),
 		context:     ctx,
 	}, true)
 }
@@ -112,6 +135,9 @@ func processManifestText(sourceName string, input string, context BuildContext, 
 	currentActive := func() bool { return stack[len(stack)-1].active }
 
 	for index, line := range lines {
+		if err := preprocessContextError(options.context, "manifest.preprocess", sourceName); err != nil {
+			return nil, err
+		}
 		directive, found, parseErr := parseBuildDirective(line)
 		if parseErr != nil {
 			return nil, directiveError(sourceName, index+1, "manifest.preprocess.directive")
@@ -163,7 +189,7 @@ func processManifestText(sourceName string, input string, context BuildContext, 
 				return nil, directiveError(sourceName, index+1, "manifest.preprocess.include")
 			}
 			if options.context != nil {
-				if err := preprocessContextError(options.context, displayName); err != nil {
+				if err := preprocessContextError(options.context, "manifest.preprocess", displayName); err != nil {
 					return nil, err
 				}
 			}
@@ -172,7 +198,7 @@ func processManifestText(sourceName string, input string, context BuildContext, 
 				return nil, directiveError(sourceName, index+1, "manifest.preprocess.include")
 			}
 			if options.context != nil {
-				if err := preprocessContextError(options.context, displayName); err != nil {
+				if err := preprocessContextError(options.context, "manifest.preprocess", displayName); err != nil {
 					return nil, err
 				}
 			}
@@ -293,12 +319,12 @@ func sourceReference(sourceName string, line int) string {
 	return sourceName + ":" + strconv.Itoa(line)
 }
 
-func preprocessContextError(ctx context.Context, filename string) error {
+func preprocessContextError(ctx context.Context, op string, filename string) error {
 	if ctx == nil {
-		return &lpkgo.Error{Code: lpkgo.CodeInvalidArgument, Op: "manifest.preprocess_file", Path: filepath.ToSlash(filename), Cause: errors.New("nil context")}
+		return &lpkgo.Error{Code: lpkgo.CodeInvalidArgument, Op: op, Path: filepath.ToSlash(filename), Cause: errors.New("nil context")}
 	}
 	if err := ctx.Err(); err != nil {
-		return &lpkgo.Error{Code: lpkgo.CodeCancelled, Op: "manifest.preprocess_file", Path: filepath.ToSlash(filename), Cause: err}
+		return &lpkgo.Error{Code: lpkgo.CodeCancelled, Op: op, Path: filepath.ToSlash(filename), Cause: err}
 	}
 	return nil
 }

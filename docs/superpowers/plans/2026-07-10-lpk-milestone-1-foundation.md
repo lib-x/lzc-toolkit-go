@@ -1083,9 +1083,10 @@ Expose:
     type IncludeFS = fs.FS
 
     func Preprocess(
+        context.Context,
         sourceName string,
         input []byte,
-        context BuildContext,
+        buildContext BuildContext,
         includes fs.FS,
     ) ([]byte, error)
 
@@ -1098,6 +1099,9 @@ Expose:
 Implement the exact #@build if, else, end, and include grammar documented in
 the design. Included files are processed with directives disabled. Copy the
 environment map before use and sort no externally observable map output.
+Preprocess and PreprocessFile require a non-nil context, return CANCELLED for
+pre-cancelled contexts, and check cancellation throughout processing and
+before and after active include reads.
 
 - [ ] **Step 3: Write manifest lint tests**
 

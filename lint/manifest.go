@@ -186,6 +186,11 @@ var manifestSchema = object(
 // Manifest reports compatibility warnings for source. The raw document is
 // authoritative for field presence; typed is accepted alongside it so callers
 // can use the same decoded manifest passed to later lifecycle stages.
+//
+// Warning.Path values from this function are opaque presentation metadata.
+// A warning that aggregates multiple source locations uses a comma-delimited
+// path string for readability; callers must not split or otherwise parse it.
+// Warning.Code is the compatibility identifier callers should consume.
 func Manifest(source *manifestpkg.Document, _ manifestpkg.Manifest) ([]lpkgo.Warning, error) {
 	if source == nil {
 		return nil, invalidManifestLintError()

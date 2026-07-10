@@ -6,6 +6,10 @@ Complete. The report is included in the requested commit
 `feat: preprocess and lint LPK manifests`; the final hash is recorded in the
 task handoff because a commit cannot contain its own stable hash.
 
+The independent final-review corrections are included in the follow-up commit
+`fix: harden manifest preprocessing boundaries`; its final hash is likewise
+recorded in the task handoff.
+
 Task 6 was implemented in `/home/czyt/code/go/lpk-go/.worktrees/lpk-foundation` only. The implementation adds no CLI, process-global state, external tool requirement, or dependency beyond the existing YAML module.
 
 ## Files
@@ -17,6 +21,7 @@ Task 6 was implemented in `/home/czyt/code/go/lpk-go/.worktrees/lpk-foundation` 
 - Added `lint/resource.go`
 - Added `lint/resource_test.go`
 - Updated `docs/superpowers/plans/2026-07-10-lpk-milestone-1-foundation.md`
+- Updated `.superpowers/sdd/task-6-brief.md`
 - Added `.superpowers/sdd/task-6-report.md`
 
 The plan update records both resolved ingestion/API boundaries:
@@ -37,9 +42,10 @@ type BuildContext struct {
 type IncludeFS = fs.FS
 
 func Preprocess(
+    context.Context,
     sourceName string,
     input []byte,
-    context BuildContext,
+    buildContext BuildContext,
     includes fs.FS,
 ) ([]byte, error)
 
@@ -57,8 +63,8 @@ Implemented behavior:
 - nested `if`/`else`/`end` blocks with parent activity preserved;
 - include indentation and inactive-include lazy behavior;
 - included files reject every build directive;
-- absolute, lexical escape, backslash, and `PreprocessFile` symlink-escape includes are rejected;
-- `PreprocessFile` checks cancellation before and after source/include reads;
+- absolute, lexical escape, backslash, and symlink-escape source/include paths are rejected by `PreprocessFile`;
+- both preprocess entry points require context and check cancellation throughout processing and before/after source/include reads;
 - caller-owned `fs.FS` values are not closed;
 - the environment map is copied before evaluation and invalid map keys are rejected.
 
@@ -89,7 +95,7 @@ The raw `Document` is authoritative for source-level presence; the typed manifes
 - `service-health-check-deprecated`
 - `ext-config-http-routing-deprecated`
 
-Warnings follow reference category order. Unknown paths follow private schema traversal order, dynamic service names are sorted, and grouped warning paths use a stable comma-separated expression. Message text remains human-readable but is not the compatibility contract.
+Warnings follow reference category order. Unknown paths follow private schema traversal order, dynamic service names are sorted, and grouped warning paths use a stable comma-separated expression. Aggregate `Warning.Path` is opaque presentation metadata and callers must not split or parse it; `Warning.Code` is the compatibility identifier. Message text remains human-readable but is not the compatibility contract.
 
 ### Resource package lint
 
@@ -100,7 +106,7 @@ func ResourcePackage(
 ) ([]lpkgo.Warning, error)
 ```
 
-Implemented the reference warning codes for package metadata, exports roots, kind limits, kind/ID naming and directory requirements, empty kinds, and empty payloads. Visible directory entries use slash paths and deterministic `fs.ReadDir` ordering. Dot-prefixed kinds/resources are ignored. Payload traversal uses `fs.WalkDir` and stops at the first regular payload file.
+Implemented the reference warning codes for package metadata, exports roots, kind limits, duplicate kinds, kind/ID naming and directory requirements, empty kinds, and empty payloads. Visible directory entries use slash paths and deterministic `fs.ReadDir` ordering. Dot-prefixed kinds/resources are ignored. Payload traversal uses `fs.WalkDir` and stops at the first regular payload file.
 
 ## TDD record
 
@@ -191,7 +197,7 @@ exit 0
 Review sign-off:
 
 ```text
-files changed:    8 task files/docs
+files changed:    9 task files/docs
 scope:            on target
 review depth:     deep
 hard stops:       3 found, 3 fixed, 0 deferred
@@ -203,4 +209,68 @@ verification:     focused, full, race, vet, diff-check -> pass
 
 ## Concerns
 
-No blocking concerns. The selected aggregate `Warning.Path` expression is deliberately documented and tested because the reference CLI has one warning per category rather than one warning per individual field.
+No blocking concerns.
+
+Final-review minor ledger: aggregate `Warning.Path` values are comma-delimited
+for readable parity with the reference CLI's one-warning-per-category model.
+The delimiter is ambiguous when an unknown YAML key itself contains a comma.
+This task deliberately preserves behavior and documents the field as opaque
+presentation metadata; callers must consume `Warning.Code` and must not parse
+aggregate paths. No root `Warning` API change was introduced.
+
+## Independent final-review fixes
+
+Controller resolution was applied with public-interface TDD coverage:
+
+1. Context-aware `Preprocess` contract.
+   - Covering test: `TestPreprocessRequiresLiveContext`.
+   - RED command: `go test ./manifest -run '^TestPreprocessRequiresLiveContext$' -count=1`.
+   - RED output: compile failure because the old `Preprocess` accepted four arguments rather than the context-first five-argument signature.
+   - GREEN output: `ok github.com/lib-x/lpk-go/manifest`.
+   - Result: nil contexts return `INVALID_ARGUMENT`; pre-cancelled contexts return both `CANCELLED` and `context.Canceled` before touching the include filesystem. The processing loop and active include reads check cancellation.
+2. Source-root containment and resolved filenames.
+   - Covering tests: `TestPreprocessFileRejectsSymlinkSourceEscape`, `TestPreprocessFileRejectsSymlinkIncludeEscape`, and `TestPreprocessFileResolvesRelativeFilenameForReadsAndErrors`.
+   - RED command: `go test ./manifest -run '^TestPreprocessFileRejectsSymlinkSourceEscape$' -count=1`.
+   - RED output: the escaped source was accepted with `error = <nil>`.
+   - GREEN command: `go test ./manifest -run '^(TestPreprocessFileRejectsSymlinkSourceEscape|TestPreprocessFileRejectsSymlinkIncludeEscape|TestPreprocessFileResolvesRelativeFilenameForReadsAndErrors)$' -count=1`.
+   - GREEN output: `ok github.com/lib-x/lpk-go/manifest`.
+   - Result: filenames are resolved with `filepath.Abs`/`Clean`; one `os.Root` reads the source basename and all includes. Display paths use the resolved slash path. Root close failures use a constant safe cause.
+3. Duplicate resource kinds.
+   - Covering test: `TestResourcePackageReportsDuplicateVisibleKinds` using a malicious `fs.ReadDirFS` that returns a duplicate visible directory entry.
+   - RED command: `go test ./lint -run '^TestResourcePackageReportsDuplicateVisibleKinds$' -count=1`.
+   - RED output: no warning was returned.
+   - GREEN output: `ok github.com/lib-x/lpk-go/lint` with `resource-export-kind-duplicated` at `exports/config`.
+   - Result: duplicate detection follows the reference order: directory check, name validation, then duplicate check.
+4. Aggregate warning-path documentation.
+   - `lint.Manifest` Go doc now marks aggregate paths as opaque, comma-delimited presentation metadata and directs callers to `Warning.Code`.
+   - Existing stable warning tests remain unchanged.
+
+Fresh follow-up verification:
+
+```text
+go test ./manifest ./lint -count=1
+ok github.com/lib-x/lpk-go/manifest 0.003s
+ok github.com/lib-x/lpk-go/lint     0.013s
+
+go test ./... -count=1
+ok github.com/lib-x/lpk-go
+ok github.com/lib-x/lpk-go/archive
+ok github.com/lib-x/lpk-go/lint
+ok github.com/lib-x/lpk-go/manifest
+ok github.com/lib-x/lpk-go/version
+ok github.com/lib-x/lpk-go/workflow
+
+go test -race ./... -count=1
+ok github.com/lib-x/lpk-go
+ok github.com/lib-x/lpk-go/archive
+ok github.com/lib-x/lpk-go/lint
+ok github.com/lib-x/lpk-go/manifest
+ok github.com/lib-x/lpk-go/version
+ok github.com/lib-x/lpk-go/workflow
+
+go vet ./...
+exit 0
+
+git diff --check
+exit 0
+```

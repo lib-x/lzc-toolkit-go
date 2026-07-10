@@ -103,6 +103,7 @@ func lintResourceExports(ctx context.Context, root fs.FS) ([]lpkgo.Warning, erro
 	if len(kindEntries) > maxResourceExportKinds {
 		warnings = append(warnings, resourceWarning("resource-exports-too-many-kinds", "exports", "resource-only packages may export at most 100 visible kinds."))
 	}
+	seenKinds := make(map[string]struct{}, len(kindEntries))
 	for _, kindEntry := range kindEntries {
 		if err := lintContextError(ctx, "lint.resource_package"); err != nil {
 			return nil, err
@@ -117,6 +118,11 @@ func lintResourceExports(ctx context.Context, root fs.FS) ([]lpkgo.Warning, erro
 			warnings = append(warnings, resourceWarning("resource-export-kind-invalid", kindPath, "resource export kind name is invalid."))
 			continue
 		}
+		if _, exists := seenKinds[kind]; exists {
+			warnings = append(warnings, resourceWarning("resource-export-kind-duplicated", kindPath, "resource export kind is duplicated."))
+			continue
+		}
+		seenKinds[kind] = struct{}{}
 
 		resourceEntries, err := fs.ReadDir(root, kindPath)
 		if err != nil {

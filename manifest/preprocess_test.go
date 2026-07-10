@@ -3,6 +3,7 @@ package manifest_test
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,7 @@ func TestPreprocessSelectsProfileBranch(t *testing.T) {
 	t.Parallel()
 
 	input := []byte("before\n#@build if profile = release\nrelease\n#@build else\ndevelopment\n#@build end\nafter\n")
-	got, err := manifest.Preprocess("manifest.yml", input, manifest.BuildContext{Profile: "release"}, fstest.MapFS{})
+	got, err := manifest.Preprocess(context.Background(), "manifest.yml", input, manifest.BuildContext{Profile: "release"}, fstest.MapFS{})
 	if err != nil {
 		t.Fatalf("Preprocess() error = %v", err)
 	}
@@ -26,11 +27,24 @@ func TestPreprocessSelectsProfileBranch(t *testing.T) {
 	}
 }
 
+func TestPreprocessRequiresLiveContext(t *testing.T) {
+	t.Parallel()
+
+	if _, err := manifest.Preprocess(nil, "manifest.yml", []byte("value\n"), manifest.BuildContext{}, fstest.MapFS{}); !errors.Is(err, lpkgo.ErrInvalidArgument) {
+		t.Fatalf("Preprocess(nil context) error = %v; want INVALID_ARGUMENT", err)
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := manifest.Preprocess(cancelled, "manifest.yml", []byte("#@build include must-not-read.yml\n"), manifest.BuildContext{}, panicOpenFS{}); !errors.Is(err, context.Canceled) || !errors.Is(err, lpkgo.ErrCancelled) {
+		t.Fatalf("Preprocess(cancelled) error = %v; want context.Canceled and CANCELLED", err)
+	}
+}
+
 func TestPreprocessNestsConditionsWithoutActivatingAnInactiveParent(t *testing.T) {
 	t.Parallel()
 
 	input := []byte("#@build if profile = disabled\nouter\n#@build if env.INNER = yes\nwrong-inner\n#@build else\nwrong-fallback\n#@build end\n#@build else\nselected\n#@build end\n")
-	got, err := manifest.Preprocess("manifest.yml", input, manifest.BuildContext{
+	got, err := manifest.Preprocess(context.Background(), "manifest.yml", input, manifest.BuildContext{
 		Profile: "release",
 		Env:     map[string]string{"INNER": "yes"},
 	}, fstest.MapFS{})
@@ -63,7 +77,7 @@ func TestPreprocessEvaluatesConditionGrammar(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			input := []byte("#@build if " + test.condition + "\nselected\n#@build else\nfallback\n#@build end\n")
-			got, err := manifest.Preprocess("manifest.yml", input, test.context, fstest.MapFS{})
+			got, err := manifest.Preprocess(context.Background(), "manifest.yml", input, test.context, fstest.MapFS{})
 			if err != nil {
 				t.Fatalf("Preprocess() error = %v", err)
 			}
@@ -81,7 +95,7 @@ func TestPreprocessLoadsOnlyActiveIncludesWithDirectiveIndentation(t *testing.T)
 		"config/fragments/service.yml": {Data: []byte("image: example:v1\nenvironment:\n  READY: yes\n")},
 	}
 	input := []byte("services:\n  api:\n    #@build include 'fragments/service.yml'\n#@build if profile = never\n#@build include fragments/missing.yml\n#@build end\n")
-	got, err := manifest.Preprocess("config/manifest.yml", input, manifest.BuildContext{Profile: "release"}, includes)
+	got, err := manifest.Preprocess(context.Background(), "config/manifest.yml", input, manifest.BuildContext{Profile: "release"}, includes)
 	if err != nil {
 		t.Fatalf("Preprocess() error = %v", err)
 	}
@@ -120,7 +134,7 @@ func TestPreprocessReportsStructuredDirectiveLocations(t *testing.T) {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := manifest.Preprocess(test.sourceName, []byte(test.input), test.context, test.includes)
+			_, err := manifest.Preprocess(context.Background(), test.sourceName, []byte(test.input), test.context, test.includes)
 			if !errors.Is(err, lpkgo.ErrInvalidManifest) {
 				t.Fatalf("Preprocess() error = %v; want INVALID_MANIFEST", err)
 			}
@@ -146,7 +160,7 @@ func TestPreprocessDoesNotCloseCallerFilesystem(t *testing.T) {
 	includes := &closeTrackingFS{MapFS: fstest.MapFS{
 		"fragment.yml": {Data: []byte("enabled: true\n")},
 	}}
-	if _, err := manifest.Preprocess("manifest.yml", []byte("#@build include fragment.yml\n"), manifest.BuildContext{}, includes); err != nil {
+	if _, err := manifest.Preprocess(context.Background(), "manifest.yml", []byte("#@build include fragment.yml\n"), manifest.BuildContext{}, includes); err != nil {
 		t.Fatalf("Preprocess() error = %v", err)
 	}
 	if includes.closed {
@@ -207,9 +221,66 @@ func TestPreprocessFileRejectsSymlinkIncludeEscape(t *testing.T) {
 	}
 }
 
+func TestPreprocessFileRejectsSymlinkSourceEscape(t *testing.T) {
+	t.Parallel()
+
+	directory := t.TempDir()
+	root := filepath.Join(directory, "root")
+	outside := filepath.Join(directory, "outside.yml")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatalf("Mkdir(root) error = %v", err)
+	}
+	if err := os.WriteFile(outside, []byte("outside: true\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(outside) error = %v", err)
+	}
+	filename := filepath.Join(root, "manifest.yml")
+	if err := os.Symlink(outside, filename); err != nil {
+		t.Skipf("Symlink() unavailable: %v", err)
+	}
+
+	_, err := manifest.PreprocessFile(context.Background(), filename, manifest.BuildContext{})
+	if !errors.Is(err, lpkgo.ErrInvalidManifest) {
+		t.Fatalf("PreprocessFile(symlink source escape) error = %v; want INVALID_MANIFEST", err)
+	}
+}
+
+func TestPreprocessFileResolvesRelativeFilenameForReadsAndErrors(t *testing.T) {
+	t.Parallel()
+
+	directory := t.TempDir()
+	filename := filepath.Join(directory, "manifest.yml")
+	if err := os.WriteFile(filename, []byte("#@build end\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(manifest) error = %v", err)
+	}
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	relativeFilename, err := filepath.Rel(workingDirectory, filename)
+	if err != nil {
+		t.Fatalf("filepath.Rel() error = %v", err)
+	}
+
+	_, err = manifest.PreprocessFile(context.Background(), relativeFilename, manifest.BuildContext{})
+	var structured *lpkgo.Error
+	if !errors.As(err, &structured) {
+		t.Fatalf("PreprocessFile(relative) error = %v; want *lpkgo.Error", err)
+	}
+	wantPath := filepath.ToSlash(filename) + ":1"
+	if structured.Path != wantPath {
+		t.Fatalf("PreprocessFile(relative) error Path = %q; want %q", structured.Path, wantPath)
+	}
+}
+
 type closeTrackingFS struct {
 	fstest.MapFS
 	closed bool
+}
+
+type panicOpenFS struct{}
+
+func (panicOpenFS) Open(string) (fs.File, error) {
+	panic("pre-cancelled Preprocess read its include filesystem")
 }
 
 func (filesystem *closeTrackingFS) Close() error {

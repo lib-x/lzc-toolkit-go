@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -63,6 +64,23 @@ func TestResourcePackageLimitsVisibleKinds(t *testing.T) {
 		t.Fatalf("ResourcePackage() error = %v", err)
 	}
 	want := [][2]string{{"resource-exports-too-many-kinds", "exports"}}
+	if got := warningCodePaths(warnings); !reflect.DeepEqual(got, want) {
+		t.Fatalf("ResourcePackage() code/path = %#v; want %#v", got, want)
+	}
+}
+
+func TestResourcePackageReportsDuplicateVisibleKinds(t *testing.T) {
+	t.Parallel()
+
+	root := duplicateKindFS{MapFS: fstest.MapFS{
+		"package.yml":                     {Data: []byte("package: cloud.lazycat.resources\nversion: 1.0.0\n")},
+		"exports/config/default/data.yml": {Data: []byte("enabled: true\n")},
+	}}
+	warnings, err := lint.ResourcePackage(context.Background(), root)
+	if err != nil {
+		t.Fatalf("ResourcePackage() error = %v", err)
+	}
+	want := [][2]string{{"resource-export-kind-duplicated", "exports/config"}}
 	if got := warningCodePaths(warnings); !reflect.DeepEqual(got, want) {
 		t.Fatalf("ResourcePackage() code/path = %#v; want %#v", got, want)
 	}
@@ -178,4 +196,16 @@ func mustMkdirAll(t *testing.T, directory string) {
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		t.Fatalf("MkdirAll(%q) error = %v", directory, err)
 	}
+}
+
+type duplicateKindFS struct {
+	fstest.MapFS
+}
+
+func (filesystem duplicateKindFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	entries, err := filesystem.MapFS.ReadDir(name)
+	if err != nil || name != "exports" || len(entries) == 0 {
+		return entries, err
+	}
+	return append(entries, entries[0]), nil
 }
