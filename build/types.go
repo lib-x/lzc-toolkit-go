@@ -4,9 +4,11 @@ package build
 
 import (
 	"context"
+	"io/fs"
 
 	lpkgo "github.com/lib-x/lpk-go"
 	"github.com/lib-x/lpk-go/lpk"
+	"github.com/lib-x/lpk-go/manifest"
 )
 
 const DefaultConfigFile = "lzc-build.yml"
@@ -69,6 +71,26 @@ type CommandRunner interface {
 	Run(context.Context, Command) error
 }
 
+// ImageBuildRequest is the dependency-light input passed to an optional image
+// adapter. Docker and remote implementations live outside package build.
+type ImageBuildRequest struct {
+	Root     string
+	Config   any
+	Manifest manifest.Manifest
+}
+
+// ImageArtifact owns a completed package-relative OCI filesystem containing
+// images.lock and images/. Build copies it before calling Close.
+type ImageArtifact interface {
+	FS() fs.FS
+	Close() error
+}
+
+// ImageBuilder builds the OCI artifact for an images configuration.
+type ImageBuilder interface {
+	Build(context.Context, ImageBuildRequest) (ImageArtifact, error)
+}
+
 // Request describes a project build. Root defaults to the current directory,
 // ConfigFile defaults to lzc-build.yml, and build scripts are disabled unless
 // RunBuildScript is explicitly set.
@@ -83,15 +105,18 @@ type Request struct {
 	Strict             bool
 	RunBuildScript     bool
 	Runner             CommandRunner
+	ImageBuilder       ImageBuilder
 }
 
 // Result reports the selected configuration and encoded package metadata.
 type Result struct {
-	ConfigPath string
-	Profile    Profile
-	Layout     lpk.Layout
-	Package    string
-	Version    string
-	Warnings   []lpkgo.Warning
-	Write      lpk.WriteResult
+	ConfigPath     string
+	Profile        Profile
+	Layout         lpk.Layout
+	Package        string
+	Version        string
+	Warnings       []lpkgo.Warning
+	Write          lpk.WriteResult
+	ImageCount     int
+	ResolvedImages map[string]string
 }

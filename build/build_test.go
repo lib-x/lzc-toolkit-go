@@ -3,13 +3,20 @@ package build
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+	"testing/fstest"
 
 	"github.com/lib-x/lpk-go/lpk"
+	"github.com/lib-x/lpk-go/oci"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestBuildWritesLegacyProjectToCallerWriterWithoutRunningScriptByDefault(t *testing.T) {
@@ -292,6 +299,99 @@ application:
 	}
 }
 
+func TestBuildUsesInjectedImageBuilderAndEmbedsValidatedOCIArtifact(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "lzc-build.yml", `
+manifest: lzc-manifest.yml
+contentdir: content
+images:
+  app:
+    context: .
+`)
+	writeTestFile(t, root, "lzc-manifest.yml", `
+application:
+  subdomain: image-app
+  image: embed:app
+`)
+	writeTestFile(t, root, "package.yml", `
+package: cloud.lazycat.apps.image-app
+version: 1.0.0
+name: Image App
+`)
+	writeTestFile(t, root, "content/data.txt", "content")
+	artifact := newTestImageArtifact(t)
+	builder := &staticImageBuilder{artifact: artifact}
+	var output bytes.Buffer
+
+	result, err := Build(context.Background(), &output, Request{Root: root, ImageBuilder: builder})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if builder.calls != 1 || builder.request.Manifest.Application.Image != "embed:app" {
+		t.Fatalf("builder calls=%d request=%#v", builder.calls, builder.request)
+	}
+	if !artifact.closed {
+		t.Fatal("image artifact was not closed")
+	}
+	if result.ImageCount != 1 || result.ResolvedImages["app"] == "" {
+		t.Fatalf("result = %#v", result)
+	}
+	reader, err := lpk.Open(context.Background(), bytes.NewReader(output.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	for _, name := range []string{"images.lock", "images/oci-layout", "images/index.json", "content.tar.gz"} {
+		assertLPKEntry(t, reader, name)
+	}
+	assertNoLPKEntry(t, reader, "content.tar")
+	manifestEntry, err := reader.OpenEntry(context.Background(), "manifest.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestData, err := io.ReadAll(manifestEntry)
+	closeErr := manifestEntry.Close()
+	if err != nil || closeErr != nil {
+		t.Fatalf("read=%v close=%v", err, closeErr)
+	}
+	wantImage := "embed:app@" + result.ResolvedImages["app"]
+	if !bytes.Contains(manifestData, []byte(wantImage)) {
+		t.Fatalf("manifest does not contain %q:\n%s", wantImage, manifestData)
+	}
+}
+
+func TestRewriteEmbeddedImagesDoesNotMatchLongerAliasPrefix(t *testing.T) {
+	digest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	got, err := rewriteEmbeddedImages([]byte("first: embed:app-helper\nsecond: embed:app\n"), map[string]string{"app": digest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "first: embed:app-helper\nsecond: embed:app@" + digest + "\n"
+	if string(got) != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestBuildEmptyImagesConfigSelectsV2WithoutRequiringAdapter(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "lzc-build.yml", "images: {}\n")
+	writeTestFile(t, root, "lzc-manifest.yml", `
+package: cloud.lazycat.apps.empty-images
+version: 1.0.0
+application:
+  subdomain: empty-images
+`)
+	var output bytes.Buffer
+
+	result, err := Build(context.Background(), &output, Request{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Layout != lpk.LayoutV2 || result.ImageCount != 0 {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
 type recordingRunner struct {
 	calls   int
 	command Command
@@ -320,4 +420,82 @@ func assertNoLPKEntry(t *testing.T, reader *lpk.Reader, name string) {
 	if _, err := reader.Entry(context.Background(), name); err == nil {
 		t.Fatalf("unexpected LPK entry %q", name)
 	}
+}
+
+type staticImageBuilder struct {
+	calls    int
+	request  ImageBuildRequest
+	artifact *testImageArtifact
+}
+
+func (b *staticImageBuilder) Build(_ context.Context, request ImageBuildRequest) (ImageArtifact, error) {
+	b.calls++
+	b.request = request
+	return b.artifact, nil
+}
+
+type testImageArtifact struct {
+	files  fs.FS
+	closed bool
+}
+
+func (a *testImageArtifact) FS() fs.FS { return a.files }
+
+func (a *testImageArtifact) Close() error {
+	a.closed = true
+	return nil
+}
+
+func newTestImageArtifact(t *testing.T) *testImageArtifact {
+	t.Helper()
+	config := []byte(`{"architecture":"amd64","os":"linux"}`)
+	layer := []byte("embedded-image-layer")
+	configDigest := testDigest(t, config)
+	layerDigest := testDigest(t, layer)
+	imageManifest := oci.Manifest{
+		SchemaVersion: 2,
+		MediaType:     oci.MediaTypeImageManifest,
+		Config:        oci.Descriptor{MediaType: oci.MediaTypeImageConfig, Digest: configDigest, Size: int64(len(config))},
+		Layers:        []oci.Descriptor{{MediaType: oci.MediaTypeImageLayerGzip, Digest: layerDigest, Size: int64(len(layer))}},
+	}
+	manifestData, err := json.Marshal(imageManifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestDigest := testDigest(t, manifestData)
+	indexData, err := json.Marshal(oci.Index{SchemaVersion: 2, Manifests: []oci.Descriptor{{
+		MediaType: oci.MediaTypeImageManifest,
+		Digest:    manifestDigest,
+		Size:      int64(len(manifestData)),
+		Annotations: map[string]string{
+			oci.AnnotationRefName: "app",
+		},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockData, err := yaml.Marshal(oci.Lock{Version: 1, Images: map[string]oci.LockImage{
+		"app": {ImageID: configDigest, Layers: []oci.LockLayer{{Digest: layerDigest, Source: oci.LayerSourceEmbed}}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &testImageArtifact{files: fstest.MapFS{
+		"images.lock":       &fstest.MapFile{Data: lockData},
+		"images/oci-layout": &fstest.MapFile{Data: []byte(`{"imageLayoutVersion":"1.0.0"}`)},
+		"images/index.json": &fstest.MapFile{Data: indexData},
+		"images/blobs/sha256/" + configDigest.Hex():   &fstest.MapFile{Data: config},
+		"images/blobs/sha256/" + layerDigest.Hex():    &fstest.MapFile{Data: layer},
+		"images/blobs/sha256/" + manifestDigest.Hex(): &fstest.MapFile{Data: manifestData},
+	}}
+}
+
+func testDigest(t *testing.T, data []byte) oci.Digest {
+	t.Helper()
+	sum := sha256.Sum256(data)
+	digest, err := oci.ParseDigest("sha256:" + hex.EncodeToString(sum[:]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return digest
 }

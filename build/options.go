@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	lpkgo "github.com/lib-x/lpk-go"
@@ -34,6 +35,19 @@ func selectLayout(request Request, loaded LoadedConfig, packageExists, resourceO
 		return lpk.LayoutV2
 	}
 	return lpk.LayoutV1
+}
+
+func hasConfiguredImages(value any) bool {
+	if value == nil {
+		return false
+	}
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Map, reflect.Slice, reflect.Array:
+		return reflected.Len() > 0
+	default:
+		return true
+	}
 }
 
 func rejectRemovedOptions(loaded LoadedConfig) error {

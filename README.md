@@ -108,6 +108,12 @@ The `oci` package also exposes `ReadLock`/`WriteLock`,
 verified by streaming sha256; upstream layers are represented by
 `images.lock` and do not have to exist in the package.
 
+Image production is injected into `build.Request.ImageBuilder`. The adapter
+returns a package-relative `fs.FS`; build validates it with `oci.Validate`,
+copies only `images.lock` and `images/`, rewrites `embed:<alias>` references to
+the resolved image ID, and switches `content.tar` to `content.tar.gz`. This
+keeps Docker and remote builders out of the base build package.
+
 Lint an extracted package root:
 
 ```go

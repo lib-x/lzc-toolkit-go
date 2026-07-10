@@ -1,6 +1,7 @@
 package build
 
 import (
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -244,6 +245,104 @@ func copyTree(ctx context.Context, source, destination string) error {
 		}
 		return copyFile(name, target)
 	})
+}
+
+func copyFilesystem(ctx context.Context, source fs.FS, destination string) error {
+	return fs.WalkDir(source, ".", func(name string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return buildPathError("build.copy_filesystem", name, walkErr)
+		}
+		if err := checkContext(ctx, "build.copy_filesystem"); err != nil {
+			return err
+		}
+		if name == "." {
+			return nil
+		}
+		if name != "images.lock" && name != "images" && !strings.HasPrefix(name, "images/") {
+			return buildPathError("build.copy_filesystem", name, errors.New("image artifact contains a non-image path"))
+		}
+		target := filepath.Join(destination, filepath.FromSlash(name))
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return buildPathError("build.copy_filesystem", name, err)
+		}
+		if !info.Mode().IsRegular() {
+			return buildPathError("build.copy_filesystem", name, errors.New("unsupported artifact file type"))
+		}
+		input, err := source.Open(name)
+		if err != nil {
+			return buildPathError("build.copy_filesystem", name, err)
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			_ = input.Close()
+			return buildPathError("build.copy_filesystem", target, err)
+		}
+		output, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+		if err != nil {
+			_ = input.Close()
+			return buildPathError("build.copy_filesystem", target, err)
+		}
+		_, copyErr := io.Copy(output, &contextReader{ctx: ctx, reader: input})
+		inputCloseErr := input.Close()
+		outputCloseErr := output.Close()
+		if copyErr != nil {
+			return buildPathError("build.copy_filesystem", name, copyErr)
+		}
+		if inputCloseErr != nil {
+			return buildPathError("build.copy_filesystem", name, inputCloseErr)
+		}
+		if outputCloseErr != nil {
+			return buildPathError("build.copy_filesystem", target, outputCloseErr)
+		}
+		return nil
+	})
+}
+
+func gzipContentArchive(ctx context.Context, staging string) error {
+	sourcePath := filepath.Join(staging, "content.tar")
+	input, err := os.Open(sourcePath)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return buildPathError("build.gzip_content", sourcePath, err)
+	}
+	destinationPath := filepath.Join(staging, "content.tar.gz")
+	output, err := os.Create(destinationPath)
+	if err != nil {
+		_ = input.Close()
+		return buildPathError("build.gzip_content", destinationPath, err)
+	}
+	compressed := gzip.NewWriter(output)
+	_, copyErr := io.Copy(compressed, &contextReader{ctx: ctx, reader: input})
+	gzipCloseErr := compressed.Close()
+	inputCloseErr := input.Close()
+	outputCloseErr := output.Close()
+	if copyErr != nil {
+		return buildPathError("build.gzip_content", sourcePath, copyErr)
+	}
+	if gzipCloseErr != nil || inputCloseErr != nil || outputCloseErr != nil {
+		return buildPathError("build.gzip_content", destinationPath, errors.Join(gzipCloseErr, inputCloseErr, outputCloseErr))
+	}
+	if err := os.Remove(sourcePath); err != nil {
+		return buildPathError("build.gzip_content", sourcePath, err)
+	}
+	return nil
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r *contextReader) Read(data []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(data)
 }
 
 func copyFile(source, destination string) error {

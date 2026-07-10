@@ -13,6 +13,7 @@ import (
 	lpkgo "github.com/lib-x/lpk-go"
 	"github.com/lib-x/lpk-go/lpk"
 	"github.com/lib-x/lpk-go/manifest"
+	"github.com/lib-x/lpk-go/oci"
 )
 
 type preparedBuild struct {
@@ -23,6 +24,7 @@ type preparedBuild struct {
 	version   string
 	warnings  []lpkgo.Warning
 	templated bool
+	images    oci.Report
 	cleanup   func() error
 }
 
@@ -73,12 +75,14 @@ func BuildFile(ctx context.Context, filename string, request Request) (Result, e
 
 func (p preparedBuild) result() Result {
 	return Result{
-		ConfigPath: p.config.Path,
-		Profile:    p.config.Profile,
-		Layout:     p.layout,
-		Package:    p.packageID,
-		Version:    p.version,
-		Warnings:   append([]lpkgo.Warning(nil), p.warnings...),
+		ConfigPath:     p.config.Path,
+		Profile:        p.config.Profile,
+		Layout:         p.layout,
+		Package:        p.packageID,
+		Version:        p.version,
+		Warnings:       append([]lpkgo.Warning(nil), p.warnings...),
+		ImageCount:     p.images.ImageCount,
+		ResolvedImages: cloneStringMap(p.images.ResolvedByAlias),
 	}
 }
 
@@ -117,9 +121,6 @@ func prepare(ctx context.Context, request Request) (preparedBuild, error) {
 	}
 	if err := rejectRemovedOptions(loaded); err != nil {
 		return preparedBuild{}, err
-	}
-	if loaded.Config.Images != nil {
-		return preparedBuild{}, &lpkgo.Error{Code: lpkgo.CodeIncompatibleBackend, Op: "build.prepare_images", Path: filepath.ToSlash(loaded.Path), Cause: errors.New("image build stage is not configured")}
 	}
 	if request.RunBuildScript && strings.TrimSpace(loaded.Config.BuildScript) != "" {
 		runner := request.Runner
@@ -231,6 +232,43 @@ func prepare(ctx context.Context, request Request) (preparedBuild, error) {
 	if prepared.version == "" {
 		return fail(configError("build.metadata", metadataPath(resourceOnly, manifestPath, packagePath), errors.New("version is required")))
 	}
+	if hasConfiguredImages(loaded.Config.Images) {
+		if request.ImageBuilder == nil {
+			return fail(&lpkgo.Error{Code: lpkgo.CodeIncompatibleBackend, Op: "build.prepare_images", Path: filepath.ToSlash(loaded.Path), Cause: errors.New("image builder is required")})
+		}
+		artifact, buildErr := request.ImageBuilder.Build(ctx, ImageBuildRequest{
+			Root:     root,
+			Config:   loaded.Config.Images,
+			Manifest: effective.Manifest,
+		})
+		if buildErr != nil {
+			if artifact != nil {
+				_ = artifact.Close()
+			}
+			return fail(&lpkgo.Error{Code: lpkgo.CodeCommandFailed, Op: "build.prepare_images", Cause: buildErr})
+		}
+		if artifact == nil {
+			return fail(configError("build.prepare_images", loaded.Path, errors.New("image builder returned a nil artifact")))
+		}
+		artifactFS := artifact.FS()
+		if artifactFS == nil {
+			if artifact != nil {
+				_ = artifact.Close()
+			}
+			return fail(configError("build.prepare_images", loaded.Path, errors.New("image builder returned a nil artifact")))
+		}
+		prepared.images, err = oci.Validate(ctx, artifactFS)
+		if err == nil {
+			err = copyFilesystem(ctx, artifactFS, staging)
+		}
+		closeErr := artifact.Close()
+		if err != nil {
+			return fail(err)
+		}
+		if closeErr != nil {
+			return fail(&lpkgo.Error{Code: lpkgo.CodeCommandFailed, Op: "build.prepare_images.close", Cause: closeErr})
+		}
+	}
 
 	prepared.layout = selectLayout(request, loaded, packageExists, resourceOnly)
 	if prepared.layout == lpk.LayoutV1 {
@@ -281,11 +319,30 @@ func prepare(ctx context.Context, request Request) (preparedBuild, error) {
 			return fail(buildPathError("build.stage_package_info", packagePath, err))
 		}
 	}
+	if prepared.images.ImageCount > 0 {
+		manifestOutputPath := filepath.Join(staging, "manifest.yml")
+		if data, readErr := os.ReadFile(manifestOutputPath); readErr == nil {
+			data, err = rewriteEmbeddedImages(data, prepared.images.ResolvedByAlias)
+			if err != nil {
+				return fail(err)
+			}
+			if err := os.WriteFile(manifestOutputPath, data, 0o644); err != nil {
+				return fail(buildPathError("build.rewrite_images", manifestOutputPath, err))
+			}
+		} else if !errors.Is(readErr, os.ErrNotExist) {
+			return fail(buildPathError("build.rewrite_images", manifestOutputPath, readErr))
+		}
+	}
 
 	warnings, err := collectProjectContent(ctx, root, staging, loaded.Config)
 	if err != nil {
 		return fail(err)
 	}
 	prepared.warnings = warnings
+	if prepared.images.ImageCount > 0 {
+		if err := gzipContentArchive(ctx, staging); err != nil {
+			return fail(err)
+		}
+	}
 	return prepared, nil
 }

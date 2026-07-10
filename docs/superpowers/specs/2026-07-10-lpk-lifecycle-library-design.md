@@ -615,6 +615,13 @@ The build package exposes matching writer-first operations:
 Build prepares the package root and delegates final container encoding to
 lpk.Write.
 
+Image production is an injected build.ImageBuilder boundary. It returns an
+owned ImageArtifact exposing a package-relative fs.FS containing only
+images.lock and images/. Build validates that artifact through the pure oci
+package, copies it into the package root, rewrites embed aliases, and closes
+the artifact. Docker, buildah, remote build-pack, and App Store packages
+implement this interface without becoming dependencies of package build.
+
 ## 13. Archive and inspection
 
 The archive package provides:

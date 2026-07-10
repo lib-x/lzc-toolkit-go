@@ -7,9 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/lib-x/lpk-go/manifest"
+	"github.com/lib-x/lpk-go/oci"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -172,4 +174,27 @@ func rewriteTopLevelScalar(data []byte, field, value string) []byte {
 		}
 	}
 	return []byte(strings.Join(lines, "\n"))
+}
+
+func rewriteEmbeddedImages(data []byte, resolved map[string]string) ([]byte, error) {
+	aliases := make([]string, 0, len(resolved))
+	for alias := range resolved {
+		aliases = append(aliases, alias)
+	}
+	sort.Slice(aliases, func(i, j int) bool {
+		if len(aliases[i]) == len(aliases[j]) {
+			return aliases[i] < aliases[j]
+		}
+		return len(aliases[i]) > len(aliases[j])
+	})
+	output := string(data)
+	for _, alias := range aliases {
+		digest, err := oci.ParseDigest(resolved[alias])
+		if err != nil {
+			return nil, configError("build.rewrite_images", "manifest.yml", fmt.Errorf("invalid resolved image for alias %q", alias))
+		}
+		pattern := regexp.MustCompile(`embed:` + regexp.QuoteMeta(alias) + `(?:@sha256:[0-9a-fA-F]{64})?([^A-Za-z0-9._-]|$)`)
+		output = pattern.ReplaceAllString(output, "embed:"+alias+"@"+digest.String()+"$1")
+	}
+	return []byte(output), nil
 }
