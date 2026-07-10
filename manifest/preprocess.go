@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	lpkgo "github.com/lib-x/lpk-go"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
 )
 
 // BuildContext contains the values available to manifest build directives.

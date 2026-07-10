@@ -13,9 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/lint"
-	"github.com/lib-x/lpk-go/lpk"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/lint"
+	"github.com/lib-x/lzc-toolkit-go/lpk"
 )
 
 const defaultMaxPublishBytes = int64(32 << 30)

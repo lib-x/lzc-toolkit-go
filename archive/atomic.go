@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	lpkgo "github.com/lib-x/lpk-go"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
 )
 
 func WriteFileAtomic(ctx context.Context, filename string, source fs.FS, options WriteOptions) (result WriteResult, resultErr error) {

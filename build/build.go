@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/lpk"
-	"github.com/lib-x/lpk-go/manifest"
-	"github.com/lib-x/lpk-go/oci"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/lpk"
+	"github.com/lib-x/lzc-toolkit-go/manifest"
+	"github.com/lib-x/lzc-toolkit-go/oci"
 )
 
 type preparedBuild struct {
@@ -136,7 +136,7 @@ func prepare(ctx context.Context, request Request) (preparedBuild, error) {
 		}
 	}
 
-	staging, err := os.MkdirTemp("", "lpk-go-build-*")
+	staging, err := os.MkdirTemp("", "lzc-toolkit-build-*")
 	if err != nil {
 		return preparedBuild{}, &lpkgo.Error{Code: lpkgo.CodeCommandFailed, Op: "build.stage", Cause: err}
 	}

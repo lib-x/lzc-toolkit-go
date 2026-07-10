@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Module path is github.com/lib-x/lpk-go.
+- Module path is github.com/lib-x/lzc-toolkit-go.
 - Declared Go language version is 1.25.0 because safe extraction requires
   os.Root.Chmod, os.Root.Link, os.Root.MkdirAll, and os.Root.Symlink; do not
   substitute host-path or platform-specific mutation fallbacks.
@@ -136,7 +136,7 @@ Expected failure: no go.mod and undefined Error and Code symbols.
 
 Create go.mod:
 
-    module github.com/lib-x/lpk-go
+    module github.com/lib-x/lzc-toolkit-go
 
     go 1.25.0
 
@@ -330,11 +330,11 @@ Create version/version.go with constants and immutable copied slices:
     func Current() Info {
         moduleVersion := ""
         if build, ok := debug.ReadBuildInfo(); ok {
-            if build.Main.Path == "github.com/lib-x/lpk-go" {
+            if build.Main.Path == "github.com/lib-x/lzc-toolkit-go" {
                 moduleVersion = build.Main.Version
             }
             for _, dep := range build.Deps {
-                if dep.Path == "github.com/lib-x/lpk-go" {
+                if dep.Path == "github.com/lib-x/lzc-toolkit-go" {
                     moduleVersion = dep.Version
                     break
                 }
@@ -1651,10 +1651,10 @@ It fails if dependency output contains:
 - google.golang.org/grpc;
 - golang.org/x/crypto/ssh;
 - github.com/docker;
-- github.com/lib-x/lpk-go/appstore;
-- github.com/lib-x/lpk-go/remote;
-- github.com/lib-x/lpk-go/project;
-- github.com/lib-x/lpk-go/lifecycle.
+- github.com/lib-x/lzc-toolkit-go/appstore;
+- github.com/lib-x/lzc-toolkit-go/remote;
+- github.com/lib-x/lzc-toolkit-go/project;
+- github.com/lib-x/lzc-toolkit-go/lifecycle.
 
 - [ ] **Step 4: Add CI**
 

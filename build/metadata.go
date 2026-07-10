@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/lib-x/lpk-go/manifest"
-	"github.com/lib-x/lpk-go/oci"
+	"github.com/lib-x/lzc-toolkit-go/manifest"
+	"github.com/lib-x/lzc-toolkit-go/oci"
 	"go.yaml.in/yaml/v3"
 )
 

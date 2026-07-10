@@ -10,8 +10,8 @@ import (
 	"os/exec"
 	"strings"
 
-	imagebuild "github.com/lib-x/lpk-go/image"
-	"github.com/lib-x/lpk-go/oci"
+	imagebuild "github.com/lib-x/lzc-toolkit-go/image"
+	"github.com/lib-x/lzc-toolkit-go/oci"
 )
 
 const maxCommandOutput = 16 << 20

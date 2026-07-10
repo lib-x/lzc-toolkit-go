@@ -8,10 +8,10 @@ import (
 	"io/fs"
 	"strings"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/archive"
-	"github.com/lib-x/lpk-go/lpk"
-	"github.com/lib-x/lpk-go/manifest"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/archive"
+	"github.com/lib-x/lzc-toolkit-go/lpk"
+	"github.com/lib-x/lzc-toolkit-go/manifest"
 )
 
 // Reader inspects an already-open LPK. It does not close r.

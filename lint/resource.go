@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"strings"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	manifestpkg "github.com/lib-x/lpk-go/manifest"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	manifestpkg "github.com/lib-x/lzc-toolkit-go/manifest"
 )
 
 const maxResourceExportKinds = 100

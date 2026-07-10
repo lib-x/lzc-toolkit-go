@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	lpkgo "github.com/lib-x/lpk-go"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
 )
 
 type StaticToken string

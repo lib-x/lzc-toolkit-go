@@ -11,8 +11,8 @@ import (
 	"testing"
 	"testing/fstest"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/lint"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/lint"
 )
 
 func TestResourcePackageReportsMissingRequiredRoots(t *testing.T) {

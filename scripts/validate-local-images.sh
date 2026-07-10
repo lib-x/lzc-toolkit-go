@@ -24,7 +24,7 @@ cat >"$WORK/Dockerfile" <<'EOF'
 FROM scratch
 COPY hello.txt /hello.txt
 EOF
-printf 'hello from lpk-go\n' >"$WORK/hello.txt"
+printf 'hello from lzc-toolkit-go\n' >"$WORK/hello.txt"
 printf 'content\n' >"$WORK/content/data.txt"
 cat >"$WORK/lzc-build.yml" <<'EOF'
 manifest: lzc-manifest.yml

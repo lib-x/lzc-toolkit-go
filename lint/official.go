@@ -8,8 +8,8 @@ import (
 	"regexp"
 	"strings"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/manifest"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/manifest"
 )
 
 const (

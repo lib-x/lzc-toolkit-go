@@ -13,8 +13,8 @@ import (
 	"sort"
 	"strings"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/archive"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/archive"
 	"go.yaml.in/yaml/v3"
 )
 

@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	lpkarchive "github.com/lib-x/lpk-go/archive"
-	"github.com/lib-x/lpk-go/lpk"
+	lpkarchive "github.com/lib-x/lzc-toolkit-go/archive"
+	"github.com/lib-x/lzc-toolkit-go/lpk"
 )
 
 func TestOpenV1ReaderFromStreamOwnsTemporaryFileOnly(t *testing.T) {

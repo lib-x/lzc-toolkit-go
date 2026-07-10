@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	imagebuild "github.com/lib-x/lpk-go/image"
-	"github.com/lib-x/lpk-go/manifest"
+	imagebuild "github.com/lib-x/lzc-toolkit-go/image"
+	"github.com/lib-x/lzc-toolkit-go/manifest"
 )
 
 func TestNormalizeSupportsReferenceImageConfiguration(t *testing.T) {

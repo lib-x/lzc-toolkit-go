@@ -5,6 +5,8 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
 )
 
 type testState struct{ Values []string }
@@ -89,5 +91,12 @@ func TestPipelineFailureEventUsesSafeMessage(t *testing.T) {
 	}
 	if got := events[1].Message; got != "stage failed" {
 		t.Fatalf("failure message = %q", got)
+	}
+}
+
+func TestPipelineRejectsNilContext(t *testing.T) {
+	err := NewPipeline[*testState](nil).Run(nil, &testState{})
+	if !errors.Is(err, lpkgo.ErrInvalidArgument) {
+		t.Fatalf("error=%#v", err)
 	}
 }

@@ -8,9 +8,9 @@ import (
 	"testing"
 	"testing/fstest"
 
-	lpkarchive "github.com/lib-x/lpk-go/archive"
-	"github.com/lib-x/lpk-go/inspect"
-	"github.com/lib-x/lpk-go/lpk"
+	lpkarchive "github.com/lib-x/lzc-toolkit-go/archive"
+	"github.com/lib-x/lzc-toolkit-go/inspect"
+	"github.com/lib-x/lzc-toolkit-go/lpk"
 )
 
 func TestInspectV1Package(t *testing.T) {

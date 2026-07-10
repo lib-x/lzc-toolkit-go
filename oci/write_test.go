@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/lib-x/lpk-go/oci"
+	"github.com/lib-x/lzc-toolkit-go/oci"
 )
 
 func TestWriteAndReadLockRoundTrip(t *testing.T) {

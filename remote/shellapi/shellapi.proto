@@ -1,0 +1,299 @@
+syntax = "proto3";
+
+package space.heiyu.hportal.shell;
+
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/lib-x/lzc-toolkit-go/remote/shellapi;shellapi";
+
+
+message LoginRequest {
+  string box_name_or_id = 1;
+
+  string user_name = 2;
+  string user_passwd = 3;
+
+
+  //若为true则将此盒子设置为默认盒子，
+  //即使为false,但当前没有任何盒子的话，也会自动变为default_box
+  bool as_default_box = 4;
+
+  //最多等待多久
+  int32 max_wait_seconds = 5;
+
+  optional string tfa_code = 6;
+}
+
+
+// 此接口为hclient&hserver曝露给管理界面、命令行客户端等使用的API
+service ShellCore {
+  // 删除盒子
+  rpc DelBoxConfig(BoxID) returns (google.protobuf.Empty);
+
+  // 添加、修改盒子的登录信息、开启、关闭盒子等
+  // 如果是登录新盒子，可以直接使用LoginBox这个接口，一次性处理ModifyBoxConfig和等待成功操作
+  rpc ModifyBoxConfig(BoxSetting) returns (google.protobuf.Empty);
+
+  // 阻塞请求登录一个具体盒子，以下几种情况下会结束整个请求
+  // 1. 请求超时。(由LoginRequest中的max_wait_seconds决定)
+  // 2. 结果为非connecting状态
+  //
+  // 连接中的状态会通过stream返回
+  rpc LoginBox(LoginRequest) returns (stream BoxInfo);
+
+  // 查询当前盒子列表的状态
+  rpc QueryBoxList(google.protobuf.Empty) returns(BoxList);
+
+  // 查询shellcore本身的一些信息
+  rpc QueryShellCoreInfo(google.protobuf.Empty) returns (ShellCoreInfo);
+
+  // 将日志以及额外的调试信息上传到官方服务器, 主要给最终用户点击上传日志时使用
+  rpc UploadDebugInfo(UploadDebugInfoRequest) returns (UploadDebugInfoResponse);
+
+  // 基于BSID与附近的盒子建立"近场"直连通讯
+  // 成功连接后，hclient与hserver可以正常通讯，但底层可能是ble之类的慢速通道
+  // 后续会在合适的时候自动使用此通道进行连接(优先级较低)
+  rpc ConnectNearbyBox(ConnectNearbyBoxRequest) returns (stream ConnectNearbyBoxReply);
+
+  // 请求访问(盒子里)通过sysbridge/RegisterBoxService注册的服务
+  //
+  // - 在成功连接上请求的盒子后会返回本地的代理监听地址
+  // - 当调用者关闭本请求时或会自动释放相关资源
+  // - 返回的监听地址为127.0.0.1上的随机端口
+  // - 若盒子服务在开始存在，但在此函数中途丢失或出现网络错误
+  //   本函数不会主动终止，调用者应该根据实际代理服务的情况来决定是否应该主动结束DialBoxService
+  rpc DialBoxService(DialBoxServiceRequest) returns (stream DialBoxServiceReply);
+
+  //------------------------以下所有接口都将废弃或即将废弃------------------------------------------------------
+
+  // 使shellcore进程退出.  只有PC上有意义，优先考虑在client侧处理
+  rpc Exit(google.protobuf.Empty) returns (google.protobuf.Empty) {option deprecated=true;}
+  rpc DialTokenNetwork(DialTokenNetworkRequest) returns (stream DialTokenNetworkReply) {option deprecated=true;}
+}
+
+message DialBoxServiceRequest {
+  string box_id = 1;
+  string service_name = 2;
+}
+
+message DialBoxServiceReply {
+  string local_proxy_address = 1; //返回本地监听的临时地址
+  string service_extra_info = 2;
+}
+
+message ConnectNearbyBoxRequest {
+  string bsid = 1;
+}
+
+message ConnectNearbyBoxReply {
+  enum Status {
+    // 正在搜索
+    Scanning = 0;
+
+    // 搜索到盒子，正在连接中
+    Connecting = 1;
+
+    // 无法建立连接，具体原因看failed_reason字段
+    Failed = 2;
+
+    // 成功建立连接， 此处的Connected仅代表libp2p层连接成功，
+    // 调用者依旧需要使用`ModifyBox`之类的盒子管理接口来添加到盒子列表中
+    Connected = 3;
+  }
+  Status status = 1;
+
+  // 当status为Failed时，`failed_reason`提供更具体的信息
+  optional string failed_reason = 2;
+
+  // 当status为Connected时，此字段为盒子的peer id
+  optional string box_peer = 3;
+
+  // 是否应该提示开启相关通道,此状态仅在状态为Scanning时有效
+  bool should_enable_ble = 4;
+  bool should_enable_wifidirect = 5;
+  // 是否已初始化
+  bool is_initialized = 6;
+}
+
+message DialTokenNetworkRequest {
+  option deprecated=true;
+
+  string box_id = 1; //远端地址
+
+  string network = 2; //目前只允许访问token类型网络,此字段必须写"token"
+  string address = 3; //token的值
+}
+
+message DialTokenNetworkReply {
+  option deprecated=true;
+
+  string local_endpoint = 1; //返回本地监听的临时地址
+}
+
+message BoxID {
+  string id = 1;
+}
+
+message BoxSetting {
+  string id = 1; //box_id
+  optional string name = 2; //box_name
+
+  // 以下optional,若不设置则使用当前值
+
+  optional bool enabled = 3;
+
+  message AuthInfo {
+    string user = 1;
+    string password = 2;
+    optional string password_hash = 3;
+  }
+  optional AuthInfo auth = 4;
+
+  //设置此盒子为默认盒子，会覆盖其他(如果有)默认盒子的配置
+  //第一个添加的盒子会自动成为默认盒子
+  optional bool set_as_default_box = 5;
+
+  optional string tfa_code = 6;
+}
+
+// 盒子只会处于以下四种状态之一
+enum BoxStatus {
+  // 此盒子当前未激活
+  DISABLED = 0;
+
+  // 内部状态，当激活的一瞬间会处于此状态
+  // 此状态下会很快自动进入CONNECTING状态
+  ENABLED = 4;
+
+  // 正在连接中，此过程持续时间无法评估，
+  // 可能瞬间结束也可能持续一两分钟(在确实可以连接上的前提下)
+  CONNECTING = 1;
+
+  // 此盒子已经可以正常使用
+  READY = 2;
+
+  // 确定无法连接，此时不会继续调度，需要客户端介入.
+  // 客户端需要根据FailedStatus的具体值，进行修复。
+  FAILED = 3;
+}
+
+//------ 000 未知原因失败。其他所有状态都会有一个明确的处理方式，客户端UI需要根据具体的失败状态进行UI交互
+//------ 1xx 未进行login前的失败，如版本不匹配
+//------ 2xx login hserver未成功，如帐号密码错误、TFA失败、当前设备被管理员移除等
+//------ 3xx (hserver成功后)上层盒子系统异常，如数据盘需要解密、核心组件无法启动等
+enum FailedStatus {
+  // 当前客户端无法处理此失败，直接提示failed reason
+  // 比如hserver版本较高或较低，提供了一些当前hclient无法支持的失败状态
+  FAILED_UNKNOWN = 0;
+
+
+  //调用LoginBox的过程中，此盒子的状态被其他API请求转换为disabled了
+  FAILED_LOCAL_DISABLED_BOX = 100;
+  //调用LoginBox时使用了一个不存在的盒子名称。(若只是本地不盒子列表不存在此盒子，会自动添加到盒子列表)
+  FAILED_LOCAL_NO_SUCH_BOX_IN_THE_WORLD = 101;
+  //使用LoginBox时，登录超时
+  FAILED_LOCAL_CONNECTING_TIMEOUT = 102;
+  // 当前设备已经被移除，请不要继续登录。仅在LoginBox时会出现此状态。且shellapi会自动删除此状态的配置信息
+  FAILED_LOCAL_DEVICE_HAS_BEEN_REMOVED = 103;
+
+
+  //盒子未初始化，需要调用setupnewbox向horigin申请盒子名称以及配套资源
+  FAILED_LOGIN_HSERVER_NOT_INIT = 200;
+  // 当前登录信息不正确，需要调用ModifyBox设置新的auth信息
+  FAILED_LOGIN_INVALID_PASSWORD = 201;
+  // 当前客户端与服务器版本不匹配，无法连接，需要升级盒子系统或客户端软件
+  FAILED_LOGIN_MISMATCH_BOX_VERSION = 203;
+  // 需要进行两步验证
+  FAILED_LOGIN_TFA_REQUIRE = 204;
+  // 两步验证结果不通过
+  FAILED_LOGIN_TFA_FAILED = 205;
+  // 两步验证等待超时
+  FAILED_LOGIN_TFA_TIMEOUT = 206;
+  FAILED_LOGIN_TFA_NO_TRUSTED_DEVICE_ONLINE = 207;
+
+
+  // 盒子系统处于异常状态，需要管理员介入修复
+  FAILED_BOXSYS_UNKNOWN_EXCEPTION = 301;
+  // 盒子系统处于数据盘等待解密状态，需要管理员输入磁盘密码
+  FAILED_BOXSYS_WAITING_DATADISK_DECRYPTION = 302;
+  // 盒子系统处于数据盘未初始化状态，需要管理员选择磁盘格式化方案，比如是否加密等
+  FAILED_BOXSYS_DATADISK_NOT_INIT = 303;
+}
+
+message BoxInfo {
+  string box_id = 1;
+
+  string box_name = 2;
+
+  string box_home_url = 3;
+
+  string box_domain = 4;
+
+  string box_virtual_ip = 5;
+
+  BoxStatus status = 6;
+
+  string status_reason = 7;
+  optional FailedStatus failed_status = 8;
+
+  string login_user = 9;
+  bool is_admin_login = 10;
+
+  // 此盒子属于当前客户端的默认盒子
+  bool is_default_box = 11;
+
+  // 底层网络的连接类型，如果是Relay/BLE这类则客户端一般需要进行提示并且限制访问流量要求大的应用
+  LowNetworkConnType conn_type = 12;
+}
+
+enum LowNetworkConnType {
+  NOT_CONNECTED = 0; //未建立连接
+  BLE = 100;  //通过蓝牙建立的慢速连接
+  RELAY = 200; //通过中继建立的慢速连接
+  NORMAL = 300; //正常连接，可能是通过多层或一层局域网也可能是互联网等方式建立的连接
+  DIRECT = 400; //通过局域网等高速通道建立的连接
+}
+
+message BoxList {
+  repeated BoxInfo boxes = 1;
+}
+
+message ShellCoreInfo {
+  string id = 1;
+  string tun_ip = 2;
+
+  // 当前节点广播的地址列表
+  repeated string local_ips = 3;
+
+  string origin_server = 4;
+
+  string device_domain = 5;
+
+  string version = 6;
+
+  // 当前节点上的网卡地址列表
+  repeated string ifce_ips = 7;
+
+  // 当前节点上实际监听的地址列表
+  repeated string listen_ips = 8;
+
+  string device_os = 9;
+
+  // 额外的调试信息
+  map<string, string> debug_extras = 101;
+}
+
+message UploadDebugInfoRequest {
+  // 上传的服务器地址
+  string url = 1;
+
+  // 由用户提供的描述信息
+  string issue_content = 2;
+
+  // 用户联系方式, 如手机号或邮箱地址
+  string contact = 3;
+}
+
+message UploadDebugInfoResponse {
+  string id = 1;
+}

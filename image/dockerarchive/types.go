@@ -2,7 +2,7 @@
 // image layout used by lzc-cli LPK v2 packages.
 package dockerarchive
 
-import "github.com/lib-x/lpk-go/oci"
+import "github.com/lib-x/lzc-toolkit-go/oci"
 
 type Spec struct {
 	Ref             string

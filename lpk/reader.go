@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/archive"
-	"github.com/lib-x/lpk-go/manifest"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/archive"
+	"github.com/lib-x/lzc-toolkit-go/manifest"
 )
 
 // OpenOption configures LPK reader opening. It is shared with archive.Open.

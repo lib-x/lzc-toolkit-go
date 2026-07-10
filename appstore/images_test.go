@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lib-x/lpk-go/appstore"
-	"github.com/lib-x/lpk-go/auth"
+	"github.com/lib-x/lzc-toolkit-go/appstore"
+	"github.com/lib-x/lzc-toolkit-go/auth"
 )
 
 func TestCopyImageUsesServerSideReferenceProtocol(t *testing.T) {

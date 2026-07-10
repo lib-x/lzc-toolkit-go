@@ -6,8 +6,8 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/lib-x/lpk-go/inspect"
-	"github.com/lib-x/lpk-go/lpk"
+	"github.com/lib-x/lzc-toolkit-go/inspect"
+	"github.com/lib-x/lzc-toolkit-go/lpk"
 )
 
 func TestInspectImageSummary(t *testing.T) {
