@@ -117,4 +117,4 @@
 - [x] Change `go.mod` and every import to `github.com/lib-x/lzc-toolkit-go`; update Protobuf `go_package` and regenerate generated clients.
 - [x] Update README, specs, ADR status, scripts, examples, compatibility checks, and validation repositories.
 - [x] Run `go test ./...`, race, vet, import checks, shell checks, upstream interoperability, lazycat-contrib validation, and verify the renamed remote with `gh repo view` and `git ls-remote`.
-- [ ] Commit, push, merge to `main`, wait for GitHub Actions success, and mark the development goal complete.
+- [x] Commit, push, merge to `main`, wait for GitHub Actions success, and mark the development goal complete.
