@@ -473,6 +473,6 @@ git add README.md README.zh-CN.md docs/superpowers/plans/2026-07-10-readme-tutor
 git commit -m "docs: complete tutorial-first README"
 ```
 
-- [ ] **Step 7: Push and verify GitHub Actions**
+- [x] **Step 7: Push and verify GitHub Actions**
 
 Push `main`, then wait for Go 1.25, Go 1.26, race, and upstream interop jobs to complete successfully.
