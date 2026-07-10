@@ -74,7 +74,7 @@
 
 - [ ] **Step 2: Write fake executor argv tests**
 
-  Inject an executor with `Run(context.Context, name string, args []string, stdin io.Reader, stdout, stderr io.Writer) error`. Assert SSH uses `-p`, `BatchMode=yes`, no shell, optional `-t`, `user@host`, and remote argv as distinct arguments after the target; assert bridge execution prefixes `lzc-docker exec -i lazycat-developer-tools /lzcapp/pkg/content/backend/main`.
+  Inject an executor with `Run(context.Context, name string, args []string, stdin io.Reader, stdout, stderr io.Writer) error`. Assert SSH uses `StrictHostKeyChecking=no`, `UserKnownHostsFile=/dev/null`, `-q`, `-p`, no shell, optional `-t`, `user@host`, and remote argv as distinct arguments after the target; assert bridge execution prefixes `lzc-docker exec -i cloudlazycatdevelopertools-app-1 /lzcapp/pkg/content/debug.bridge` and uses `-it` when TTY is enabled.
 
 - [ ] **Step 3: Run the red tests**
 
