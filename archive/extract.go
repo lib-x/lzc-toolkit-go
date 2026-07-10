@@ -1,6 +1,8 @@
 package archive
 
 import (
+	"archive/tar"
+	"archive/zip"
 	"context"
 	"errors"
 	"fmt"
@@ -96,6 +98,16 @@ func (r *Reader) extract(ctx context.Context, destination string, selected map[s
 			return archiveError(lpkgo.CodeInvalidArgument, "archive.extract", fmt.Errorf("hardlink target is not a regular archive entry"))
 		}
 	}
+	if selected != nil {
+		for _, entry := range chosen {
+			if entry.Type != EntryHardlink {
+				continue
+			}
+			if _, ok := selected[entry.Linkname]; !ok {
+				return archiveError(lpkgo.CodeInvalidArgument, "archive.extract", fmt.Errorf("selected hardlink target is not selected"))
+			}
+		}
+	}
 	for name := range selected {
 		if _, ok := found[name]; !ok {
 			return archiveError(lpkgo.CodeNotFound, "archive.extract", fs.ErrNotExist)
@@ -159,11 +171,10 @@ func (r *Reader) extractEntries(ctx context.Context, root *os.Root, entries []En
 				return archiveError(lpkgo.CodeCommandFailed, "archive.extract", err)
 			}
 			directories = append(directories, entry)
-		case EntryRegular:
-			if err := r.extractRegular(ctx, root, entry); err != nil {
-				return err
-			}
 		}
+	}
+	if err := r.extractRegularEntries(ctx, root, entries); err != nil {
+		return err
 	}
 	for _, linkType := range []EntryType{EntryHardlink, EntrySymlink} {
 		for _, entry := range entries {
@@ -181,6 +192,9 @@ func (r *Reader) extractEntries(ctx context.Context, root *os.Root, entries []En
 			}
 			var err error
 			if entry.Type == EntryHardlink {
+				if err := requireRegularHardlinkTarget(root, entry.Linkname); err != nil {
+					return err
+				}
 				err = root.Link(entry.Linkname, entry.Name)
 			} else {
 				err = root.Symlink(entry.Linkname, entry.Name)
@@ -205,34 +219,125 @@ func (r *Reader) extractEntries(ctx context.Context, root *os.Root, entries []En
 	return nil
 }
 
-func (r *Reader) extractRegular(ctx context.Context, root *os.Root, entry Entry) error {
+func requireRegularHardlinkTarget(root *os.Root, name string) error {
+	info, err := root.Lstat(name)
+	if err != nil {
+		return archiveError(lpkgo.CodeConflict, "archive.extract", err)
+	}
+	if info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return archiveError(lpkgo.CodeConflict, "archive.extract", fmt.Errorf("hardlink target is not a materialized regular file"))
+	}
+	return nil
+}
+
+func (r *Reader) extractRegularEntries(ctx context.Context, root *os.Root, entries []Entry) error {
+	regulars := make(map[string]Entry)
+	for _, entry := range entries {
+		if entry.Type == EntryRegular {
+			regulars[entry.Name] = entry
+		}
+	}
+	if len(regulars) == 0 {
+		return nil
+	}
+
+	var err error
+	switch r.format {
+	case FormatZIP:
+		err = r.extractZIPRegularEntries(ctx, root, regulars)
+	case FormatTAR:
+		err = r.extractTARRegularEntries(ctx, root, regulars)
+	default:
+		err = archiveError(lpkgo.CodeUnsupportedFormat, "archive.extract", fmt.Errorf("unsupported format"))
+	}
+	if err != nil {
+		return err
+	}
+	if len(regulars) != 0 {
+		return archiveError(lpkgo.CodeIntegrityMismatch, "archive.extract", fmt.Errorf("selected regular entry contents are missing"))
+	}
+	return nil
+}
+
+func (r *Reader) extractZIPRegularEntries(ctx context.Context, root *os.Root, regulars map[string]Entry) error {
+	zr, err := zip.NewReader(r.data, r.size)
+	if err != nil {
+		return archiveError(lpkgo.CodeIntegrityMismatch, "archive.extract", err)
+	}
+	for _, file := range zr.File {
+		if err := contextError(ctx, "archive.extract"); err != nil {
+			return err
+		}
+		entry, ok := regulars[normalizeName(file.Name)]
+		if !ok {
+			continue
+		}
+		if file.Mode().Type() != 0 || int64(file.UncompressedSize64) != entry.Size {
+			return archiveError(lpkgo.CodeIntegrityMismatch, "archive.extract", fmt.Errorf("regular ZIP metadata changed during extraction"))
+		}
+		contents, err := file.Open()
+		if err != nil {
+			return archiveError(lpkgo.CodeIntegrityMismatch, "archive.extract", err)
+		}
+		extractErr := extractRegularContent(ctx, root, entry, contents)
+		closeErr := contents.Close()
+		if extractErr != nil {
+			return extractErr
+		}
+		if closeErr != nil {
+			return archiveError(lpkgo.CodeIntegrityMismatch, "archive.extract", closeErr)
+		}
+		delete(regulars, entry.Name)
+	}
+	return nil
+}
+
+func (r *Reader) extractTARRegularEntries(ctx context.Context, root *os.Root, regulars map[string]Entry) error {
+	tr := tar.NewReader(io.NewSectionReader(r.data, 0, r.size))
+	for {
+		if err := contextError(ctx, "archive.extract"); err != nil {
+			return err
+		}
+		header, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return archiveError(lpkgo.CodeIntegrityMismatch, "archive.extract", err)
+		}
+		entry, ok := regulars[normalizeName(header.Name)]
+		if !ok {
+			continue
+		}
+		if (header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA) || header.Size != entry.Size {
+			return archiveError(lpkgo.CodeIntegrityMismatch, "archive.extract", fmt.Errorf("regular TAR metadata changed during extraction"))
+		}
+		if err := extractRegularContent(ctx, root, entry, tr); err != nil {
+			return err
+		}
+		delete(regulars, entry.Name)
+	}
+}
+
+func extractRegularContent(ctx context.Context, root *os.Root, entry Entry, source io.Reader) error {
 	if err := createSafeParents(root, entry.Name); err != nil {
 		return err
 	}
 	if err := ensureNoSymlinkComponents(root, entry.Name); err != nil {
 		return err
 	}
-	source, err := r.OpenEntry(ctx, entry.Name)
-	if err != nil {
-		return err
-	}
 	destination, err := root.OpenFile(entry.Name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
-		_ = source.Close()
 		return archiveError(lpkgo.CodeCommandFailed, "archive.extract", err)
 	}
 
 	copyErr := copyExact(ctx, destination, source, entry.Size)
 	destinationCloseErr := destination.Close()
-	sourceCloseErr := source.Close()
 	if copyErr != nil {
 		return copyErr
 	}
 	if destinationCloseErr != nil {
 		return archiveError(lpkgo.CodeCommandFailed, "archive.extract", destinationCloseErr)
-	}
-	if sourceCloseErr != nil {
-		return archiveError(lpkgo.CodeIntegrityMismatch, "archive.extract", sourceCloseErr)
 	}
 	if err := contextError(ctx, "archive.extract"); err != nil {
 		return err

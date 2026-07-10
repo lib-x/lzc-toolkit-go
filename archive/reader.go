@@ -288,6 +288,9 @@ func (r *Reader) zipEntries(ctx context.Context) ([]Entry, error) {
 		if err := contextError(ctx, "archive.entries"); err != nil {
 			return nil, err
 		}
+		if err := r.validateRawPathBytes(file.Name, "entry path"); err != nil {
+			return nil, err
+		}
 		name := normalizeName(file.Name)
 		if _, ok := seen[name]; ok {
 			return nil, archiveError(lpkgo.CodeConflict, "archive.entries", fmt.Errorf("duplicate entry"))
@@ -345,8 +348,8 @@ func (r *Reader) readZIPLink(ctx context.Context, file *zip.File) (string, error
 	if closeErr != nil {
 		return "", archiveError(lpkgo.CodeIntegrityMismatch, "archive.entries", closeErr)
 	}
-	if len(linkname) > r.limits.MaxPathBytes {
-		return "", archiveError(lpkgo.CodeInvalidArgument, "archive.entries", fmt.Errorf("link target exceeds limits"))
+	if err := r.validateRawPathBytes(string(linkname), "link target"); err != nil {
+		return "", err
 	}
 	return string(linkname), nil
 }
@@ -367,6 +370,9 @@ func (r *Reader) tarEntries(ctx context.Context) ([]Entry, error) {
 		if err != nil {
 			return nil, archiveError(lpkgo.CodeUnsupportedFormat, "archive.entries", err)
 		}
+		if err := r.validateRawPathBytes(header.Name, "entry path"); err != nil {
+			return nil, err
+		}
 		name := normalizeName(header.Name)
 		if _, ok := seen[name]; ok {
 			return nil, archiveError(lpkgo.CodeConflict, "archive.entries", fmt.Errorf("duplicate entry"))
@@ -376,8 +382,8 @@ func (r *Reader) tarEntries(ctx context.Context) ([]Entry, error) {
 		if err != nil {
 			return nil, err
 		}
-		if len(header.Linkname) > r.limits.MaxPathBytes {
-			return nil, archiveError(lpkgo.CodeInvalidArgument, "archive.entries", fmt.Errorf("link target exceeds limits"))
+		if err := r.validateRawPathBytes(header.Linkname, "link target"); err != nil {
+			return nil, err
 		}
 		if err := r.validateEntry(name, size, len(entries)+1, &total); err != nil {
 			return nil, err
@@ -391,6 +397,14 @@ func (r *Reader) tarEntries(ctx context.Context) ([]Entry, error) {
 			ModTime:  header.ModTime,
 		})
 	}
+}
+
+func (r *Reader) validateRawPathBytes(name, field string) error {
+	slashName := strings.ReplaceAll(name, "\\", "/")
+	if len(slashName) > r.limits.MaxPathBytes {
+		return archiveError(lpkgo.CodeInvalidArgument, "archive.entries", fmt.Errorf("%s exceeds limits", field))
+	}
+	return nil
 }
 
 func tarEntryMetadata(header *tar.Header) (EntryType, fs.FileMode, int64, error) {

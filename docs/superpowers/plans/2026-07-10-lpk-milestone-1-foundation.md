@@ -837,10 +837,11 @@ Expected failure: Extract methods are undefined.
 
 - [ ] **Step 3: Implement path and link validation**
 
-Use path.Clean on slash-separated archive names after replacing backslashes
-with slashes. Reject empty names except the root directory, absolute names,
-NUL, volume-like prefixes, cleaned dot-dot traversal, and paths longer than
-MaxPathBytes.
+Replace backslashes with slashes and enforce MaxPathBytes on each raw header
+name before path.Clean. Then reject empty names except the root directory,
+absolute names, NUL, volume-like prefixes, cleaned dot-dot traversal, and
+cleaned paths longer than MaxPathBytes. Apply the raw byte limit to link
+targets before their normalization as well.
 
 Resolve symlink targets relative to path.Dir(entry.Name). Reject absolute
 targets and any cleaned result outside the archive root.
@@ -849,9 +850,15 @@ Use os.OpenRoot on the destination. Create directories with Root.MkdirAll,
 regular files with Root.OpenFile, links with Root.Symlink or Root.Link, and
 never construct a writable host path by joining untrusted entry names.
 
-Copy regular files through a context-aware reader, verify the exact declared
-size, apply the permission bits masked to 0777, and reject unsupported entry
-types.
+After Entries validates all metadata, read selected ZIP contents in one direct
+ZIP iteration and selected TAR regular contents in one sequential TAR pass;
+do not call public OpenEntry once per regular file. Copy regular files through
+a context-aware reader, verify the exact declared size, apply the permission
+bits masked to 0777, and reject unsupported entry types.
+
+For selected extraction, a selected hardlink is valid only when its regular
+archive target is also selected and materialized. Immediately before
+Root.Link, Root.Lstat the target and require a regular non-symlink file.
 
 - [ ] **Step 4: Write atomic output tests**
 

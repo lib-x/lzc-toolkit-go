@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -372,6 +373,38 @@ func TestExtractEnforcesEntryAndSizeLimits(t *testing.T) {
 	}
 }
 
+func TestExtractRejectsRawHeaderPathOverLimit(t *testing.T) {
+	formats := []struct {
+		name  string
+		build func(*testing.T, []extractionFixture) []byte
+	}{
+		{name: "ZIP", build: makeExtractionZIP},
+		{name: "TAR", build: makeExtractionTAR},
+	}
+	for _, format := range formats {
+		t.Run(format.name, func(t *testing.T) {
+			data := format.build(t, []extractionFixture{{name: "././././a", contents: "data"}})
+			r, err := lpkarchive.OpenReaderAt(
+				context.Background(),
+				bytes.NewReader(data),
+				int64(len(data)),
+				lpkarchive.WithLimits(lpkarchive.Limits{MaxPathBytes: 8}),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = r.Close() })
+			destination := t.TempDir()
+			if err := r.Extract(context.Background(), destination); !errors.Is(err, lpkgo.ErrInvalidArgument) {
+				t.Fatalf("error = %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(destination, "a")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("cleaned path was extracted: %v", err)
+			}
+		})
+	}
+}
+
 func TestExtractRejectsPreexistingEscapingSymlink(t *testing.T) {
 	parent := t.TempDir()
 	destination := filepath.Join(parent, "destination")
@@ -481,6 +514,74 @@ func TestExtractSelectedWritesOnlyNamedEntries(t *testing.T) {
 	}
 }
 
+func TestExtractSelectedHardlinkRequiresSelectedRegularTarget(t *testing.T) {
+	data := makeExtractionTAR(t, []extractionFixture{
+		{name: "source", contents: "archive data", mode: 0o640},
+		{name: "copy", typeflag: tar.TypeLink, linkname: "source", mode: 0o640},
+	})
+	r, err := lpkarchive.OpenReaderAt(context.Background(), bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+
+	destination := t.TempDir()
+	if err := os.WriteFile(filepath.Join(destination, "actual"), []byte("preexisting"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("actual", filepath.Join(destination, "source")); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.ExtractSelected(context.Background(), destination, []string{"copy"}); !errors.Is(err, lpkgo.ErrInvalidArgument) {
+		t.Fatalf("error = %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(destination, "copy")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("copy exists or cannot be checked: %v", err)
+	}
+	contents, err := os.ReadFile(filepath.Join(destination, "actual"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(contents); got != "preexisting" {
+		t.Fatalf("preexisting target = %q", got)
+	}
+}
+
+func TestExtractSelectedHardlinkWithSelectedRegularTarget(t *testing.T) {
+	data := makeExtractionTAR(t, []extractionFixture{
+		{name: "source", contents: "archive data", mode: 0o640},
+		{name: "copy", typeflag: tar.TypeLink, linkname: "source", mode: 0o640},
+	})
+	r, err := lpkarchive.OpenReaderAt(context.Background(), bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+
+	destination := t.TempDir()
+	if err := r.ExtractSelected(context.Background(), destination, []string{"source", "copy"}); err != nil {
+		t.Fatal(err)
+	}
+	sourceInfo, err := os.Stat(filepath.Join(destination, "source"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	copyInfo, err := os.Stat(filepath.Join(destination, "copy"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(sourceInfo, copyInfo) {
+		t.Fatal("selected hardlink does not reference the selected regular target")
+	}
+	contents, err := os.ReadFile(filepath.Join(destination, "copy"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(contents); got != "archive data" {
+		t.Fatalf("copy contents = %q", got)
+	}
+}
+
 func TestExtractPreservesModes(t *testing.T) {
 	data := makeExtractionTAR(t, []extractionFixture{
 		{name: "private", mode: 0o750 | fs.ModeDir, typeflag: tar.TypeDir},
@@ -560,12 +661,51 @@ func TestExtractStopsWhenContextIsCancelledDuringCopy(t *testing.T) {
 	}
 }
 
+func TestExtractTARReadsArchiveInBoundedPasses(t *testing.T) {
+	fixtures := make([]extractionFixture, 64)
+	for i := range fixtures {
+		fixtures[i] = extractionFixture{
+			name:     fmt.Sprintf("files/%03d", i),
+			contents: string(bytes.Repeat([]byte{byte(i)}, 1024)),
+		}
+	}
+	data := makeExtractionTAR(t, fixtures)
+	source := &countingReaderAt{ReaderAt: bytes.NewReader(data)}
+	r, err := lpkarchive.OpenReaderAt(context.Background(), source, int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+	if err := r.Extract(context.Background(), t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Metadata validation and extraction each make one sequential TAR pass.
+	// Four archive lengths leaves stable headroom for detection and headers
+	// while still failing the former per-entry full reparse behavior.
+	maxRead := int64(len(data) * 4)
+	if source.bytesRead > maxRead {
+		t.Fatalf("ReadAt bytes = %d, want <= %d (%d archive bytes)", source.bytesRead, maxRead, len(data))
+	}
+}
+
 type cancelRangeReaderAt struct {
 	io.ReaderAt
 	cancel context.CancelFunc
 	start  int64
 	end    int64
 	once   sync.Once
+}
+
+type countingReaderAt struct {
+	io.ReaderAt
+	bytesRead int64
+}
+
+func (r *countingReaderAt) ReadAt(buffer []byte, offset int64) (int, error) {
+	n, err := r.ReaderAt.ReadAt(buffer, offset)
+	r.bytesRead += int64(n)
+	return n, err
 }
 
 func (r *cancelRangeReaderAt) ReadAt(buffer []byte, offset int64) (int, error) {
