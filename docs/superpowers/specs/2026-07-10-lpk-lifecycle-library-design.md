@@ -88,6 +88,12 @@ Compatibility means:
    protocol semantics are compatible.
 4. Byte-for-byte archive identity is not required.
 
+Service-facing behavior follows the reference CLI source unless a LazyCat
+service contract is explicitly superseded in a later compatibility upgrade.
+The Go SDK may expose non-interactive and dependency-injected APIs for library
+use, but it must not invent unsupported authentication modes, endpoint shapes,
+or request headers.
+
 ## 3. Goals
 
 ### 3.1 Stable library API
@@ -853,6 +859,14 @@ Provided stores:
 
 The password exists only in the login request and is never stored in Session.
 
+The compatibility source for this section is lzc-cli 2.0.8:
+
+- lib/appstore/login.js;
+- lib/appstore/index.js;
+- lib/appstore/publish.js;
+- lib/appstore/prePublish.js;
+- lib/config/env.js.
+
 Default account endpoint:
 
     https://account.lazycat.cloud
@@ -861,7 +875,7 @@ Login behavior:
 
 - POST /api/login/signin
 - application/x-www-form-urlencoded username and password
-- validate success and token fields before storing
+- validate JSON success and data.token before storing
 
 Session validation:
 
@@ -876,6 +890,12 @@ Authenticated App Store requests use:
 Pre-publish requests additionally use:
 
 - Authorization: Bearer <token>
+
+The reference CLI persists the token under its global lazycat config and
+also allows environment override through LZC_CLI_TOKEN. The SDK equivalent is
+an explicit TokenStore and TokenProvider chain. CI/CD callers can pass a token
+directly, load it from their own secret manager, or use username/password once
+to obtain and store a token. The library never requires interactive prompts.
 
 The library never recursively prompts for credentials. Missing or invalid
 credentials return UNAUTHENTICATED.
