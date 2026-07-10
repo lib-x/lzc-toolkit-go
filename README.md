@@ -143,7 +143,10 @@ result, err := client.CopyImage(ctx, appstore.CopyImageRequest{
     Image:    "docker.io/example/app:1.0.0",
     Platform: "amd64",
 })
-_ = result
+if err != nil {
+    return err
+}
+fmt.Println(result.LazyCatImage) // registry.lazycat.cloud/...
 ```
 
 Username/password login is also available through `auth.Client.Login`; the
@@ -152,7 +155,9 @@ matches lzc-cli 2.0.8: login returns `data.token`, validation uses
 `X-User-Token`, and App Store calls use both `X-User-Token` and the
 `userToken` cookie. `CopyImage` starts a server-side copy at the LazyCat
 developer platform and polls its progress—it does not use local Docker or a
-remote LazyCat device Docker daemon.
+remote LazyCat device Docker daemon. Its result also includes the submitted
+source image, selected platform, LazyCat registry image, and final layer
+progress so CI/CD callers do not need to parse logs or rely on callbacks.
 
 Lint an extracted package root:
 

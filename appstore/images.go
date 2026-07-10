@@ -33,10 +33,14 @@ type CopyProgress struct {
 }
 
 type CopyImageResult struct {
-	SourceImage  string
-	Platform     string
+	// SourceImage is the image reference submitted to the LazyCat platform.
+	SourceImage string
+	// Platform is the copied image platform. It defaults to amd64.
+	Platform string
+	// LazyCatImage is the resulting image reference in the LazyCat registry.
 	LazyCatImage string
-	Progress     CopyProgress
+	// Progress contains the final per-layer copy state.
+	Progress CopyProgress
 }
 
 type ImageRecord struct {
@@ -72,6 +76,7 @@ func (client *Client) CopyImage(ctx context.Context, input CopyImageRequest) (Co
 		return CopyImageResult{}, err
 	}
 	progressEndpoint := imageAPIPath + "/progress?" + query
+	var lastLayers []LayerProgress
 	for {
 		if err := ctx.Err(); err != nil {
 			return CopyImageResult{}, storeError(lpkgo.CodeCancelled, "appstore.copy_image", err)
@@ -93,7 +98,17 @@ func (client *Client) CopyImage(ctx context.Context, input CopyImageRequest) (Co
 		if err := json.Unmarshal(body, &payload); err != nil {
 			return CopyImageResult{}, storeRemoteError("appstore.copy_image", errors.New("invalid copy progress response"), http.StatusOK)
 		}
-		progress := CopyProgress{Finished: payload.Finished, Layers: append([]LayerProgress(nil), payload.Layers...)}
+		if len(payload.Layers) > 0 {
+			lastLayers = append(lastLayers[:0], payload.Layers...)
+		}
+		if payload.Finished {
+			// lzc-cli retains the last reported layer list because the terminal
+			// response may contain only finished and lzc_image.
+			for i := range lastLayers {
+				lastLayers[i].Progress = 100
+			}
+		}
+		progress := CopyProgress{Finished: payload.Finished, Layers: append([]LayerProgress(nil), lastLayers...)}
 		if input.OnProgress != nil {
 			input.OnProgress(progress)
 		}
