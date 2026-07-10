@@ -13,7 +13,7 @@ import (
 	"strings"
 	"sync"
 
-	lpkgo "github.com/lib-x/lpk-go"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
 )
 
 type openConfig struct {
@@ -65,7 +65,7 @@ func Open(ctx context.Context, src io.Reader, options ...OpenOption) (*Reader, e
 		return nil, err
 	}
 
-	file, err := os.CreateTemp(config.tempDir, "lpk-go-archive-*")
+	file, err := os.CreateTemp(config.tempDir, "lzc-toolkit-archive-*")
 	if err != nil {
 		return nil, archiveError(lpkgo.CodeCommandFailed, "archive.open", err)
 	}

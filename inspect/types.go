@@ -1,8 +1,8 @@
 package inspect
 
 import (
-	"github.com/lib-x/lpk-go/archive"
-	"github.com/lib-x/lpk-go/lpk"
+	"github.com/lib-x/lzc-toolkit-go/archive"
+	"github.com/lib-x/lzc-toolkit-go/lpk"
 )
 
 // Info is the materialized inspection result for one LPK.

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/lib-x/lpk-go/lpk"
-	"github.com/lib-x/lpk-go/signature"
+	"github.com/lib-x/lzc-toolkit-go/lpk"
+	"github.com/lib-x/lzc-toolkit-go/signature"
 )
 
 type testKeys struct {

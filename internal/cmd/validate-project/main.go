@@ -11,9 +11,9 @@ import (
 	"os"
 	"path/filepath"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/build"
-	"github.com/lib-x/lpk-go/image/dockerlocal"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/build"
+	"github.com/lib-x/lzc-toolkit-go/image/dockerlocal"
 )
 
 func main() {

@@ -5,7 +5,7 @@ import (
 	"io"
 	"io/fs"
 
-	"github.com/lib-x/lpk-go/archive"
+	"github.com/lib-x/lzc-toolkit-go/archive"
 )
 
 // WriteRequest describes a completed package root to encode as an LPK.

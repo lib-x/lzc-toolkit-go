@@ -6,8 +6,8 @@ import (
 	"context"
 	"errors"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/remote"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/remote"
 )
 
 type CommandFactory func(tty bool, args ...string) remote.Command

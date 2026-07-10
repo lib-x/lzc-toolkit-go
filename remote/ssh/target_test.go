@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	sshremote "github.com/lib-x/lpk-go/remote/ssh"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	sshremote "github.com/lib-x/lzc-toolkit-go/remote/ssh"
 )
 
 func TestParseTargetMatchesLZCCLIAddressRules(t *testing.T) {

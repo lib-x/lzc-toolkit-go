@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/lib-x/lpk-go/image/dockerarchive"
-	"github.com/lib-x/lpk-go/oci"
+	"github.com/lib-x/lzc-toolkit-go/image/dockerarchive"
+	"github.com/lib-x/lzc-toolkit-go/oci"
 )
 
 func TestConvertCreatesValidMixedOCIArtifact(t *testing.T) {

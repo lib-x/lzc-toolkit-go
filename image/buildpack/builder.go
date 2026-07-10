@@ -10,12 +10,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/build"
-	imagebuild "github.com/lib-x/lpk-go/image"
-	"github.com/lib-x/lpk-go/oci"
-	"github.com/lib-x/lpk-go/remote"
-	"github.com/lib-x/lpk-go/remote/blobcache"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/build"
+	imagebuild "github.com/lib-x/lzc-toolkit-go/image"
+	"github.com/lib-x/lzc-toolkit-go/oci"
+	"github.com/lib-x/lzc-toolkit-go/remote"
+	"github.com/lib-x/lzc-toolkit-go/remote/blobcache"
 )
 
 const defaultMaxContextBytes = int64(32 << 30)

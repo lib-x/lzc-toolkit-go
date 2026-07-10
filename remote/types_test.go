@@ -3,7 +3,7 @@ package remote_test
 import (
 	"testing"
 
-	"github.com/lib-x/lpk-go/remote"
+	"github.com/lib-x/lzc-toolkit-go/remote"
 )
 
 func TestNewCommandCopiesArguments(t *testing.T) {

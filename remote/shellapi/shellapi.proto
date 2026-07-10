@@ -4,7 +4,7 @@ package space.heiyu.hportal.shell;
 
 import "google/protobuf/empty.proto";
 
-option go_package = "github.com/lib-x/lpk-go/remote/shellapi;shellapi";
+option go_package = "github.com/lib-x/lzc-toolkit-go/remote/shellapi;shellapi";
 
 
 message LoginRequest {

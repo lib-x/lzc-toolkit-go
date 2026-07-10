@@ -10,11 +10,11 @@ import (
 	"os"
 	"strings"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/build"
-	"github.com/lib-x/lpk-go/project"
-	projectrsync "github.com/lib-x/lpk-go/project/rsync"
-	"github.com/lib-x/lpk-go/workflow"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/build"
+	"github.com/lib-x/lzc-toolkit-go/project"
+	projectrsync "github.com/lib-x/lzc-toolkit-go/project/rsync"
+	"github.com/lib-x/lzc-toolkit-go/workflow"
 )
 
 const (

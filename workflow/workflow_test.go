@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	lpkgo "github.com/lib-x/lpk-go"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
 )
 
 type testState struct{ Values []string }

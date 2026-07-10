@@ -17,9 +17,9 @@ import (
 	"strings"
 	"time"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	imagebuild "github.com/lib-x/lpk-go/image"
-	"github.com/lib-x/lpk-go/oci"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	imagebuild "github.com/lib-x/lzc-toolkit-go/image"
+	"github.com/lib-x/lzc-toolkit-go/oci"
 )
 
 func writeContextTar(ctx context.Context, destination string, entry imagebuild.Entry, limit int64) (oci.Digest, error) {

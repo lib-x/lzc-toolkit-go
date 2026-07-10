@@ -11,10 +11,10 @@ import (
 	"sort"
 	"testing"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	lpkarchive "github.com/lib-x/lpk-go/archive"
-	"github.com/lib-x/lpk-go/lpk"
-	"github.com/lib-x/lpk-go/signature"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	lpkarchive "github.com/lib-x/lzc-toolkit-go/archive"
+	"github.com/lib-x/lzc-toolkit-go/lpk"
+	"github.com/lib-x/lzc-toolkit-go/signature"
 )
 
 type trackingReadCloser struct {

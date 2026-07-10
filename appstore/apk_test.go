@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/appstore"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/appstore"
 )
 
 func TestTriggerAPKStreamsTypedMultipartWithoutAuthentication(t *testing.T) {

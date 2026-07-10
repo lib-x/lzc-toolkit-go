@@ -4,7 +4,7 @@ import (
 	"io/fs"
 	"time"
 
-	lpkgo "github.com/lib-x/lpk-go"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
 )
 
 type EntryType string

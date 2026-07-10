@@ -7,10 +7,10 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/lib-x/lpk-go/inspect"
-	"github.com/lib-x/lpk-go/lint"
-	"github.com/lib-x/lpk-go/lpk"
-	"github.com/lib-x/lpk-go/signature"
+	"github.com/lib-x/lzc-toolkit-go/inspect"
+	"github.com/lib-x/lzc-toolkit-go/lint"
+	"github.com/lib-x/lzc-toolkit-go/lpk"
+	"github.com/lib-x/lzc-toolkit-go/signature"
 )
 
 func TestUpstreamFixturesOpenInspectLintAndVerify(t *testing.T) {

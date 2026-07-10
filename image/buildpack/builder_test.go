@@ -12,13 +12,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/build"
-	"github.com/lib-x/lpk-go/image/buildpack"
-	"github.com/lib-x/lpk-go/manifest"
-	"github.com/lib-x/lpk-go/oci"
-	"github.com/lib-x/lpk-go/remote"
-	"github.com/lib-x/lpk-go/remote/blobcache"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/build"
+	"github.com/lib-x/lzc-toolkit-go/image/buildpack"
+	"github.com/lib-x/lzc-toolkit-go/manifest"
+	"github.com/lib-x/lzc-toolkit-go/oci"
+	"github.com/lib-x/lzc-toolkit-go/remote"
+	"github.com/lib-x/lzc-toolkit-go/remote/blobcache"
 )
 
 type fakeBackend struct {

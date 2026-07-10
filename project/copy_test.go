@@ -9,8 +9,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/lib-x/lpk-go/project"
-	"github.com/lib-x/lpk-go/remote"
+	"github.com/lib-x/lzc-toolkit-go/project"
+	"github.com/lib-x/lzc-toolkit-go/remote"
 )
 
 func TestCopyToStreamsPortableTarToDockerCP(t *testing.T) {

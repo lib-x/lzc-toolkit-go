@@ -8,8 +8,8 @@ import (
 	"path"
 	"strings"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/remote"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/remote"
 )
 
 func (client *Client) Install(ctx context.Context, input remote.InstallRequest) error {

@@ -9,8 +9,8 @@ import (
 	"os"
 	"path/filepath"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/lpk"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/lpk"
 )
 
 // Sign signs an LPK read from src and writes the signed package to dst.
@@ -47,7 +47,7 @@ func Sign(ctx context.Context, dst io.Writer, src io.Reader, request SignRequest
 	result.Layout = reader.Layout()
 	result.Format = reader.Format()
 
-	workDir, err := os.MkdirTemp("", "lpk-go-sign-*")
+	workDir, err := os.MkdirTemp("", "lzc-toolkit-sign-*")
 	if err != nil {
 		return result, signatureError(lpkgo.CodeCommandFailed, "signature.sign", err)
 	}

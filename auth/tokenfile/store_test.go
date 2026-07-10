@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/lib-x/lpk-go/auth/tokenfile"
+	"github.com/lib-x/lzc-toolkit-go/auth/tokenfile"
 )
 
 func TestStoreRoundTripUsesPrivatePermissions(t *testing.T) {

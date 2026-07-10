@@ -7,7 +7,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/lib-x/lpk-go/lpk"
+	"github.com/lib-x/lzc-toolkit-go/lpk"
 )
 
 const fsModeDir = fs.ModeDir

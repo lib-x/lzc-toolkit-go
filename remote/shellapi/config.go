@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 
-	lpkgo "github.com/lib-x/lpk-go"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
 )
 
 type Config struct {

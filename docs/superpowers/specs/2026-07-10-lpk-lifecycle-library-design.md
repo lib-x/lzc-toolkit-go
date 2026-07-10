@@ -4,11 +4,12 @@ Date: 2026-07-10
 
 Status: Approved
 
-Development module: github.com/lib-x/lpk-go
-Final module after feature completion: github.com/lib-x/lzc-toolkit-go
+Former development module: github.com/lib-x/lpk-go
+Current module: github.com/lib-x/lzc-toolkit-go
 
-The final module rename is intentionally deferred until all lifecycle features
-are implemented. See `docs/decisions/0001-defer-module-rename-to-lzc-toolkit-go.md`.
+The final module rename was deferred until all lifecycle features were
+implemented and is now complete. See
+`docs/decisions/0001-defer-module-rename-to-lzc-toolkit-go.md`.
 
 Root package: lpkgo
 
@@ -140,7 +141,7 @@ reviewable change with compatibility tests.
 
 The module uses the following public package structure:
 
-    github.com/lib-x/lpk-go
+    github.com/lib-x/lzc-toolkit-go
     ├── lpkgo lightweight shared contracts
     ├── version
     ├── workflow
@@ -222,9 +223,9 @@ core library.
 There is no all-capabilities Manager in the root package. Callers import only
 the responsibility they need:
 
-    import "github.com/lib-x/lpk-go/manifest"
-    import "github.com/lib-x/lpk-go/lpk"
-    import "github.com/lib-x/lpk-go/inspect"
+    import "github.com/lib-x/lzc-toolkit-go/manifest"
+    import "github.com/lib-x/lzc-toolkit-go/lpk"
+    import "github.com/lib-x/lzc-toolkit-go/inspect"
 
 A caller that only parses an LPK therefore does not compile or link App
 Store, gRPC, SSH, Docker, template, or synchronization code.

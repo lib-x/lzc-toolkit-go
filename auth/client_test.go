@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/lib-x/lpk-go/auth"
+	"github.com/lib-x/lzc-toolkit-go/auth"
 )
 
 func TestClientLoginUsesReferenceProtocolAndStoresToken(t *testing.T) {

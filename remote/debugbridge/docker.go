@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/remote"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/remote"
 )
 
 func (client *Client) Docker(ctx context.Context, input remote.StreamRequest) (remote.Result, error) {

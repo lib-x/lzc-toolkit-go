@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/oci"
-	"github.com/lib-x/lpk-go/remote"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/oci"
+	"github.com/lib-x/lzc-toolkit-go/remote"
 )
 
 func (builder *Builder) materialize(ctx context.Context, manifest remote.PackManifest, destination string) error {

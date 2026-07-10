@@ -11,10 +11,10 @@ import (
 	"testing"
 	"testing/fstest"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/appstore"
-	"github.com/lib-x/lpk-go/auth"
-	"github.com/lib-x/lpk-go/lpk"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/appstore"
+	"github.com/lib-x/lzc-toolkit-go/auth"
+	"github.com/lib-x/lzc-toolkit-go/lpk"
 )
 
 type publishTrackingReader struct {

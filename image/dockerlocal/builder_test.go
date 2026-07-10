@@ -13,10 +13,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/lib-x/lpk-go/build"
-	"github.com/lib-x/lpk-go/image/dockerlocal"
-	"github.com/lib-x/lpk-go/manifest"
-	"github.com/lib-x/lpk-go/oci"
+	"github.com/lib-x/lzc-toolkit-go/build"
+	"github.com/lib-x/lzc-toolkit-go/image/dockerlocal"
+	"github.com/lib-x/lzc-toolkit-go/manifest"
+	"github.com/lib-x/lzc-toolkit-go/oci"
 )
 
 func TestBuilderImplementsBuildImageAdapterWithFakeEngine(t *testing.T) {

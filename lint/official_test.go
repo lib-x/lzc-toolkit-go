@@ -8,9 +8,9 @@ import (
 	"testing"
 	"testing/fstest"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/lint"
-	"github.com/lib-x/lpk-go/manifest"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/lint"
+	"github.com/lib-x/lzc-toolkit-go/manifest"
 )
 
 func TestManifestOfficialWarningsAreOptional(t *testing.T) {

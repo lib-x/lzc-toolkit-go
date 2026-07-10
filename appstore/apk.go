@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	lpkgo "github.com/lib-x/lpk-go"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
 )
 
 const defaultAPKTriggerTimeout = 5 * time.Second

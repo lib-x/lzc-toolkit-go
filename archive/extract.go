@@ -14,7 +14,7 @@ import (
 	"strings"
 	"unicode"
 
-	lpkgo "github.com/lib-x/lpk-go"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
 )
 
 func (r *Reader) Extract(ctx context.Context, destination string) error {

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/signature"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/signature"
 )
 
 func TestGenerateKeyPairWritesPKCS8AndSPKI(t *testing.T) {

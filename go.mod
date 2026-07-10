@@ -1,4 +1,4 @@
-module github.com/lib-x/lpk-go
+module github.com/lib-x/lzc-toolkit-go
 
 go 1.25.0
 

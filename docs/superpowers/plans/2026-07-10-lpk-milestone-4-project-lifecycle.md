@@ -113,8 +113,8 @@
 
 **Files:** all module imports, generated code, docs, CI, scripts, fixtures, and repository metadata.
 
-- [ ] Rename the GitHub repository from `lib-x/lpk-go` to `lib-x/lzc-toolkit-go` with `gh api` after all functionality above is green.
-- [ ] Change `go.mod` and every import to `github.com/lib-x/lzc-toolkit-go`; update Protobuf `go_package` and regenerate generated clients.
-- [ ] Update README, specs, ADR status, scripts, examples, compatibility checks, and validation repositories.
-- [ ] Run `go test ./...`, race, vet, import checks, shell checks, upstream interoperability, lazycat-contrib validation, and verify the renamed remote with `gh repo view` and `git ls-remote`.
+- [x] Rename the GitHub repository from `lib-x/lpk-go` to `lib-x/lzc-toolkit-go` with `gh api` after all functionality above is green.
+- [x] Change `go.mod` and every import to `github.com/lib-x/lzc-toolkit-go`; update Protobuf `go_package` and regenerate generated clients.
+- [x] Update README, specs, ADR status, scripts, examples, compatibility checks, and validation repositories.
+- [x] Run `go test ./...`, race, vet, import checks, shell checks, upstream interoperability, lazycat-contrib validation, and verify the renamed remote with `gh repo view` and `git ls-remote`.
 - [ ] Commit, push, merge to `main`, wait for GitHub Actions success, and mark the development goal complete.

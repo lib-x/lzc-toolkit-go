@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/auth"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/auth"
 )
 
 func TestChainUsesFirstAvailableToken(t *testing.T) {

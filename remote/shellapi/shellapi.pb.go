@@ -1473,7 +1473,7 @@ const file_remote_shellapi_shellapi_proto_rawDesc = "" +
 	"\x10ConnectNearbyBox\x122.space.heiyu.hportal.shell.ConnectNearbyBoxRequest\x1a0.space.heiyu.hportal.shell.ConnectNearbyBoxReply0\x01\x12t\n" +
 	"\x0eDialBoxService\x120.space.heiyu.hportal.shell.DialBoxServiceRequest\x1a..space.heiyu.hportal.shell.DialBoxServiceReply0\x01\x12;\n" +
 	"\x04Exit\x12\x16.google.protobuf.Empty\x1a\x16.google.protobuf.Empty\"\x03\x88\x02\x01\x12\x7f\n" +
-	"\x10DialTokenNetwork\x122.space.heiyu.hportal.shell.DialTokenNetworkRequest\x1a0.space.heiyu.hportal.shell.DialTokenNetworkReply\"\x03\x88\x02\x010\x01B2Z0github.com/lib-x/lpk-go/remote/shellapi;shellapib\x06proto3"
+	"\x10DialTokenNetwork\x122.space.heiyu.hportal.shell.DialTokenNetworkRequest\x1a0.space.heiyu.hportal.shell.DialTokenNetworkReply\"\x03\x88\x02\x010\x01B:Z8github.com/lib-x/lzc-toolkit-go/remote/shellapi;shellapib\x06proto3"
 
 var (
 	file_remote_shellapi_shellapi_proto_rawDescOnce sync.Once

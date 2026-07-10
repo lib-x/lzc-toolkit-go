@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/remote"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/remote"
 )
 
 func (service *Service) Deploy(ctx context.Context, request DeployRequest) (DeployResult, error) {

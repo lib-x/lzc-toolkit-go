@@ -1,8 +1,8 @@
 package signature
 
 import (
-	"github.com/lib-x/lpk-go/archive"
-	"github.com/lib-x/lpk-go/lpk"
+	"github.com/lib-x/lzc-toolkit-go/archive"
+	"github.com/lib-x/lzc-toolkit-go/lpk"
 )
 
 const (

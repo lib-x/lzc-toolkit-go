@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted — Implemented
 
 ## Date
 
@@ -10,7 +10,7 @@ Accepted
 
 ## Context
 
-The SDK began as an LPK format and build library under the module path
+The SDK began as an LPK format and build library under the former module path
 `github.com/lib-x/lpk-go`. Its implemented scope now also includes project
 builds, OCI and Docker image handling, LazyCat account authentication, App
 Store publishing, image copying, APK generation, and remote project lifecycle
@@ -36,6 +36,12 @@ examples, CI scripts, compatibility checks, and package metadata. Run the full
 test, race, vet, import-boundary, lzc-cli interoperability, and downstream
 sample-project validation suites after the rename.
 
+## Implementation
+
+Implemented on 2026-07-10 after Milestone 4 passed its unit, race, vet,
+interoperability, import-boundary, and lazycat-contrib validation gates. The
+GitHub repository and Go module are now `github.com/lib-x/lzc-toolkit-go`.
+
 ## Alternatives Considered
 
 ### Rename immediately
@@ -51,9 +57,8 @@ only reads and writes LPK containers.
 
 ## Consequences
 
-- Development continues with the current module path until feature completion.
+- Feature development used the former module path until completion.
 - No compatibility alias module or dual import path will be maintained before
   the first stable release.
 - The final rename is a release gate, not an optional cleanup task.
-- Any generated Go code added before completion must use the current module
-  path and be regenerated during the final migration.
+- Generated ShellAPI Go code was regenerated with the final module path.

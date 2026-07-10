@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/lib-x/lpk-go/remote/shellapi"
+	"github.com/lib-x/lzc-toolkit-go/remote/shellapi"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"

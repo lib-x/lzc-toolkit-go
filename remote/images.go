@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/lib-x/lpk-go/oci"
+	"github.com/lib-x/lzc-toolkit-go/oci"
 )
 
 type BuildPackRequest struct {

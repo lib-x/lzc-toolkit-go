@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	lpkgo "github.com/lib-x/lpk-go"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
 )
 
 func contextError(ctx context.Context, op string) error {

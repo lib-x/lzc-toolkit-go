@@ -1,4 +1,4 @@
-# lpk-go
+# lzc-toolkit-go
 
 Go SDK for LazyCat LPK lifecycle primitives, based on `@lazycatcloud/lzc-cli`
 `2.0.8`.

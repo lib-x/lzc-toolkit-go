@@ -190,7 +190,7 @@
 
 - [ ] **Step 1: Copy and generate the exact protocol**
 
-  Copy lzc-cli 2.0.8 `lib/shellapi.proto`, change only `go_package` to `github.com/lib-x/lpk-go/remote/shellapi;shellapi`, run `go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1`, and then run:
+  Copy lzc-cli 2.0.8 `lib/shellapi.proto`, change only `go_package` to `github.com/lib-x/lzc-toolkit-go/remote/shellapi;shellapi`, run `go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1`, and then run:
 
   `protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative remote/shellapi/shellapi.proto`
 

@@ -32,11 +32,11 @@ type Info struct {
 func Current() Info {
 	moduleVersion := ""
 	if build, ok := debug.ReadBuildInfo(); ok {
-		if build.Main.Path == "github.com/lib-x/lpk-go" {
+		if build.Main.Path == "github.com/lib-x/lzc-toolkit-go" {
 			moduleVersion = build.Main.Version
 		}
 		for _, dep := range build.Deps {
-			if dep.Path == "github.com/lib-x/lpk-go" {
+			if dep.Path == "github.com/lib-x/lzc-toolkit-go" {
 				moduleVersion = dep.Version
 				break
 			}

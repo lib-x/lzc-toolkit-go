@@ -4,7 +4,7 @@ import (
 	"io/fs"
 	"strings"
 
-	lpkgo "github.com/lib-x/lpk-go"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
 )
 
 // Option configures optional lint profiles.

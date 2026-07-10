@@ -8,8 +8,8 @@ import (
 	"reflect"
 	"strings"
 
-	lpkgo "github.com/lib-x/lpk-go"
-	"github.com/lib-x/lpk-go/lpk"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/lpk"
 )
 
 func buildEnvironment(request Request) map[string]string {
