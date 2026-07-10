@@ -180,6 +180,20 @@ review. It never closes the caller-owned reader. Set `CreateIfMissing` and
 provide `Application` to explicitly permit application creation; the library
 never prompts interactively.
 
+Trigger the Android APK shell endpoint without requiring App Store auth:
+
+```go
+apk, err := client.TriggerAPK(ctx, appstore.APKRequest{
+    AppID: "cloud.lazycat.apps.example",
+    Names: map[string]string{"zh": "示例", "en": "Example"},
+    Icon:  iconReader,
+})
+```
+
+This matches lzc-cli 2.0.8's unauthenticated multipart endpoint and five-second
+default timeout. The typed result exposes the HTTP status and whether the
+request was accepted or returned `304 Not Modified`.
+
 Lint an extracted package root:
 
 ```go
