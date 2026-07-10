@@ -96,6 +96,18 @@ config inheritance, manifest preprocessing, `contentdir`, `icon`, automatic
 projects currently return `INCOMPATIBLE_BACKEND` until the separate OCI/image
 stage is configured in Milestone 2.
 
+Validate an extracted lzc-cli image layout without importing Docker support:
+
+```go
+report, err := oci.Validate(ctx, os.DirFS("package-root"))
+_ = report
+```
+
+The `oci` package also exposes `ReadLock`/`WriteLock`,
+`ReadIndex`/`WriteIndex`, and typed OCI descriptors. Embedded layer blobs are
+verified by streaming sha256; upstream layers are represented by
+`images.lock` and do not have to exist in the package.
+
 Lint an extracted package root:
 
 ```go

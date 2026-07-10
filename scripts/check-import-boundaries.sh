@@ -12,6 +12,7 @@ packages=(
 	./lint
 	./signature
 	./build
+	./oci
 )
 
 forbidden='(google\.golang\.org/grpc|golang\.org/x/crypto/ssh|github\.com/docker|github\.com/lib-x/lpk-go/(appstore|remote|project|lifecycle))'
