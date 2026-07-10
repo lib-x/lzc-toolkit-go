@@ -205,3 +205,7 @@
 - [ ] **Step 3: Validate remote state and push**
 
   Confirm the feature branch is clean, push it, verify the remote SHA with `git ls-remote`, and inspect the GitHub Actions run with `gh run watch --exit-status` before beginning the high-level project lifecycle plan.
+
+The repository/module rename to `github.com/lib-x/lzc-toolkit-go` is not part
+of this intermediate milestone. It is the final release gate after the remote
+project lifecycle plan is complete, as recorded in ADR-0001.

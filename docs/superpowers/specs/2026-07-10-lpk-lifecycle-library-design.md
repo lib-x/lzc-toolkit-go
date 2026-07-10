@@ -4,7 +4,11 @@ Date: 2026-07-10
 
 Status: Approved
 
-Module: github.com/lib-x/lpk-go
+Development module: github.com/lib-x/lpk-go
+Final module after feature completion: github.com/lib-x/lzc-toolkit-go
+
+The final module rename is intentionally deferred until all lifecycle features
+are implemented. See `docs/decisions/0001-defer-module-rename-to-lzc-toolkit-go.md`.
 
 Root package: lpkgo
 
@@ -1331,6 +1335,10 @@ The project is complete when:
     gRPC, SSH, Docker adapter, App Store, or project synchronization packages.
 18. All implementation code and unit tests are committed and pushed to the
     configured origin after the complete verification suite passes.
+19. The repository and Go module have been atomically renamed from
+    `github.com/lib-x/lpk-go` to `github.com/lib-x/lzc-toolkit-go`, including
+    all imports, generated code, documentation, CI, compatibility checks, and
+    downstream validation.
 
 ## 26. Version control handoff
 
