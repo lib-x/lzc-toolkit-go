@@ -13,25 +13,31 @@ import (
 
 	lpkgo "github.com/lib-x/lpk-go"
 	"github.com/lib-x/lpk-go/build"
+	"github.com/lib-x/lpk-go/image/dockerlocal"
 )
 
 func main() {
 	root := flag.String("root", ".", "project root")
 	config := flag.String("config", build.DefaultConfigFile, "build configuration")
+	localImages := flag.Bool("local-images", false, "enable the local Docker image adapter")
 	flag.Parse()
 
 	loaded, err := build.LoadConfig(context.Background(), *root, *config, nil)
 	if err != nil {
 		fatal(err)
 	}
-	if loaded.Config.Images != nil {
+	if loaded.Config.Images != nil && !*localImages {
 		fmt.Printf("SKIP %s: image stage required\n", filepath.Clean(*root))
 		return
 	}
-	result, err := build.Build(context.Background(), io.Discard, build.Request{
+	request := build.Request{
 		Root:       *root,
 		ConfigFile: *config,
-	})
+	}
+	if *localImages {
+		request.ImageBuilder = dockerlocal.New(nil)
+	}
+	result, err := build.Build(context.Background(), io.Discard, request)
 	if err != nil {
 		fatal(err)
 	}

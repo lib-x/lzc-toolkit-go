@@ -13,9 +13,11 @@ packages=(
 	./signature
 	./build
 	./oci
+	./image
+	./image/dockerarchive
 )
 
-forbidden='(google\.golang\.org/grpc|golang\.org/x/crypto/ssh|github\.com/docker|github\.com/lib-x/lpk-go/(appstore|remote|project|lifecycle))'
+forbidden='(google\.golang\.org/grpc|golang\.org/x/crypto/ssh|github\.com/docker|github\.com/lib-x/lpk-go/(appstore|remote|project|lifecycle|image/dockerlocal))'
 
 deps="$(go list -deps "${packages[@]}")"
 matches="$(printf '%s\n' "$deps" | grep -E "$forbidden" || true)"

@@ -114,6 +114,22 @@ copies only `images.lock` and `images/`, rewrites `embed:<alias>` references to
 the resolved image ID, and switches `content.tar` to `content.tar.gz`. This
 keeps Docker and remote builders out of the base build package.
 
+Opt into the local Docker adapter explicitly:
+
+```go
+result, err := build.Build(ctx, dst, build.Request{
+    Root:         "./my-lzcapp",
+    ImageBuilder: dockerlocal.New(nil),
+})
+```
+
+`dockerlocal.New(nil)` uses the Docker CLI behavior supported by lzc-cli
+2.0.8: `docker buildx build --load`, `docker image inspect`,
+`docker image save`, and best-effort cleanup. Tests can inject
+`dockerlocal.Engine`; importing `build`, `lpk`, `oci`, or `image` alone does
+not import or execute the Docker adapter. The local target defaults to
+`linux/amd64` and can be changed with `dockerlocal.WithPlatform`.
+
 Lint an extracted package root:
 
 ```go
