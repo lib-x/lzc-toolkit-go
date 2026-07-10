@@ -82,6 +82,8 @@ func SplitEffective(source *Document, packageInfo *PackageInfo, removedFields []
 		}
 		packageMapping.Content = append(packageMapping.Content, key, value)
 	}
+	localizeAliases(manifestDocument.root)
+	localizeAliases(packageDocument.root)
 
 	return manifestDocument, packageDocument, nil
 }
@@ -95,14 +97,14 @@ func appendTypedPackageField(mapping *yaml.Node, sourceKey *yaml.Node, field str
 	var encoded yaml.Node
 	if state == Null {
 		if err := encoded.Encode(nil); err != nil {
-			return manifestError("manifest.split_effective", err)
+			return manifestYAMLError("manifest.split_effective", "encode", err)
 		}
 	} else {
 		if isNilPackageValue(value) {
 			return manifestError("manifest.split_effective", fmt.Errorf("presence state Value for %s requires a non-nil value", field))
 		}
 		if err := encoded.Encode(value); err != nil {
-			return manifestError("manifest.split_effective", err)
+			return manifestYAMLError("manifest.split_effective", "encode", err)
 		}
 	}
 	mapping.Content = append(mapping.Content, key, &encoded)

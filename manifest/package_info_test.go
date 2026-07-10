@@ -148,18 +148,61 @@ author: null
 	}
 }
 
+func TestLoadEffectiveAliasNullRoundTripsAsNull(t *testing.T) {
+	t.Parallel()
+
+	source := mustParse(t, "application:\n  subdomain: example\n")
+	packageDocument := mustParse(t, `_null: &n null
+author: *n
+`)
+
+	effective, err := manifest.LoadEffective(source, packageDocument, false)
+	if err != nil {
+		t.Fatalf("LoadEffective() error = %v", err)
+	}
+	if effective.PackageInfo == nil || effective.PackageInfo.Presence.Author != manifest.Null {
+		t.Fatalf("PackageInfo presence = %+v; want author Null", effective.PackageInfo)
+	}
+	if effective.Manifest.Presence.Author != manifest.Null {
+		t.Fatalf("Manifest presence = %+v; want author Null", effective.Manifest.Presence)
+	}
+
+	manifestDocument, splitPackage, err := manifest.SplitEffective(effective.Source, effective.PackageInfo, nil)
+	if err != nil {
+		t.Fatalf("SplitEffective() error = %v", err)
+	}
+	assertLookup(t, splitPackage, nil, "author")
+	roundTripped, err := manifest.LoadEffective(manifestDocument, splitPackage, true)
+	if err != nil {
+		t.Fatalf("LoadEffective(split documents) error = %v", err)
+	}
+	if roundTripped.Manifest.Presence.Author != manifest.Null {
+		t.Fatalf("round-tripped presence = %+v; want author Null", roundTripped.Manifest.Presence)
+	}
+}
+
 func TestLoadEffectiveStrictRejectsStaticManifestFields(t *testing.T) {
 	t.Parallel()
 
-	source := mustParse(t, `package: cloud.lazycat.legacy
-application:
-  subdomain: example
-`)
-	packageDocument := mustParse(t, "package: cloud.lazycat.v2\n")
+	tests := []struct {
+		name        string
+		staticField string
+	}{
+		{name: "value", staticField: "package: cloud.lazycat.legacy"},
+		{name: "empty", staticField: `package: ""`},
+		{name: "null", staticField: "package: null"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-	_, err := manifest.LoadEffective(source, packageDocument, true)
-	if !errors.Is(err, lpkgo.ErrInvalidManifest) {
-		t.Fatalf("LoadEffective(strict) error = %v; want INVALID_MANIFEST", err)
+			source := mustParse(t, test.staticField+"\napplication:\n  subdomain: example\n")
+			packageDocument := mustParse(t, "package: cloud.lazycat.v2\n")
+			_, err := manifest.LoadEffective(source, packageDocument, true)
+			if !errors.Is(err, lpkgo.ErrInvalidManifest) {
+				t.Fatalf("LoadEffective(strict) error = %v; want INVALID_MANIFEST", err)
+			}
+		})
 	}
 }
 
@@ -274,6 +317,64 @@ application:
 	if effective.Manifest.Presence.Description != manifest.Value || effective.Manifest.Presence.Author != manifest.Null || effective.Manifest.Presence.Homepage != manifest.Value {
 		t.Fatalf("round-tripped presence = %+v", effective.Manifest.Presence)
 	}
+}
+
+func TestSplitEffectiveLocalizesManifestAliasToMovedStaticAnchor(t *testing.T) {
+	t.Parallel()
+
+	source := mustParse(t, `description: &shared shared-value
+application:
+  environment:
+    - *shared
+`)
+	manifestDocument, packageDocument, err := manifest.SplitEffective(source, nil, nil)
+	if err != nil {
+		t.Fatalf("SplitEffective() error = %v", err)
+	}
+
+	reparsedManifest, err := manifest.Parse(mustBytes(t, manifestDocument))
+	if err != nil {
+		t.Fatalf("Parse(manifest Bytes()) error = %v", err)
+	}
+	var typedManifest manifest.Manifest
+	if err := reparsedManifest.Decode(&typedManifest); err != nil {
+		t.Fatalf("manifest Decode() error = %v", err)
+	}
+	environment, ok := typedManifest.Application.Environment.([]any)
+	if !ok || len(environment) != 1 || environment[0] != "shared-value" {
+		t.Fatalf("manifest environment = %#v; want [shared-value]", typedManifest.Application.Environment)
+	}
+
+	reparsedPackage, err := manifest.Parse(mustBytes(t, packageDocument))
+	if err != nil {
+		t.Fatalf("Parse(package Bytes()) error = %v", err)
+	}
+	assertLookup(t, reparsedPackage, "shared-value", "description")
+}
+
+func TestSplitEffectiveLocalizesMovedStaticAliasToManifestAnchor(t *testing.T) {
+	t.Parallel()
+
+	source := mustParse(t, `application:
+  subdomain: &shared shared-value
+description: *shared
+`)
+	manifestDocument, packageDocument, err := manifest.SplitEffective(source, nil, nil)
+	if err != nil {
+		t.Fatalf("SplitEffective() error = %v", err)
+	}
+
+	reparsedManifest, err := manifest.Parse(mustBytes(t, manifestDocument))
+	if err != nil {
+		t.Fatalf("Parse(manifest Bytes()) error = %v", err)
+	}
+	assertLookup(t, reparsedManifest, "shared-value", "application", "subdomain")
+
+	reparsedPackage, err := manifest.Parse(mustBytes(t, packageDocument))
+	if err != nil {
+		t.Fatalf("Parse(package Bytes()) error = %v", err)
+	}
+	assertLookup(t, reparsedPackage, "shared-value", "description")
 }
 
 func mustParse(t *testing.T, input string) *manifest.Document {

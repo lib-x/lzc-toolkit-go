@@ -26,7 +26,7 @@ func Parse(data []byte) (*Document, error) {
 		if errors.Is(err, io.EOF) {
 			err = fmt.Errorf("empty YAML document")
 		}
-		return nil, manifestError("manifest.parse", err)
+		return nil, manifestYAMLError("manifest.parse", "parse", err)
 	}
 	if documentContent(&root) == nil || isNullNode(documentContent(&root)) {
 		return nil, manifestError("manifest.parse", fmt.Errorf("empty YAML document"))
@@ -39,7 +39,7 @@ func Parse(data []byte) (*Document, error) {
 			break
 		}
 		if err != nil {
-			return nil, manifestError("manifest.parse", err)
+			return nil, manifestYAMLError("manifest.parse", "parse", err)
 		}
 		content := documentContent(&trailing)
 		if content != nil && !isNullNode(content) {
@@ -56,7 +56,7 @@ func (d *Document) Decode(target any) error {
 		return manifestError("manifest.decode", fmt.Errorf("nil document"))
 	}
 	if err := d.root.Decode(target); err != nil {
-		return manifestError("manifest.decode", err)
+		return manifestYAMLError("manifest.decode", "decode", err)
 	}
 	return nil
 }
@@ -71,10 +71,10 @@ func (d *Document) Bytes() ([]byte, error) {
 	encoder := yaml.NewEncoder(&output)
 	encoder.SetIndent(2)
 	if err := encoder.Encode(d.root); err != nil {
-		return nil, manifestError("manifest.bytes", err)
+		return nil, manifestYAMLError("manifest.bytes", "encode", err)
 	}
 	if err := encoder.Close(); err != nil {
-		return nil, manifestError("manifest.bytes", err)
+		return nil, manifestYAMLError("manifest.bytes", "encode", err)
 	}
 	return output.Bytes(), nil
 }
@@ -86,7 +86,7 @@ func (d *Document) Lookup(path ...string) (value any, found bool, err error) {
 		return nil, found, err
 	}
 	if err := node.Decode(&value); err != nil {
-		return nil, false, manifestError("manifest.lookup", err)
+		return nil, false, manifestYAMLError("manifest.lookup", "decode", err)
 	}
 	return value, true, nil
 }
@@ -113,7 +113,7 @@ func (d *Document) Set(value any, path ...string) error {
 
 	var encoded yaml.Node
 	if err := encoded.Encode(value); err != nil {
-		return manifestError("manifest.set", err)
+		return manifestYAMLError("manifest.set", "encode", err)
 	}
 	key := path[len(path)-1]
 	for index := 0; index < len(parent.Content); index += 2 {
@@ -122,10 +122,13 @@ func (d *Document) Set(value any, path ...string) error {
 			continue
 		}
 		old := parent.Content[index+1]
+		anchor := old.Anchor
 		encoded.HeadComment = old.HeadComment
 		encoded.LineComment = old.LineComment
 		encoded.FootComment = old.FootComment
-		parent.Content[index+1] = &encoded
+		*old = encoded
+		old.Anchor = anchor
+		localizeAliases(d.root)
 		return nil
 	}
 
@@ -133,6 +136,7 @@ func (d *Document) Set(value any, path ...string) error {
 		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
 		&encoded,
 	)
+	localizeAliases(d.root)
 	return nil
 }
 
@@ -153,6 +157,7 @@ func (d *Document) Delete(path ...string) bool {
 			continue
 		}
 		parent.Content = append(parent.Content[:index], parent.Content[index+2:]...)
+		localizeAliases(d.root)
 		return true
 	}
 	return false
@@ -212,7 +217,20 @@ func documentContent(node *yaml.Node) *yaml.Node {
 }
 
 func isNullNode(node *yaml.Node) bool {
-	return node.Kind == yaml.ScalarNode && node.Tag == "!!null"
+	resolved, ok := resolveAliasNode(node)
+	return ok && resolved.Kind == yaml.ScalarNode && resolved.Tag == "!!null"
+}
+
+func resolveAliasNode(node *yaml.Node) (*yaml.Node, bool) {
+	seen := make(map[*yaml.Node]struct{})
+	for node != nil && node.Kind == yaml.AliasNode {
+		if _, exists := seen[node]; exists {
+			return nil, false
+		}
+		seen[node] = struct{}{}
+		node = node.Alias
+	}
+	return node, node != nil
 }
 
 func cloneNode(node *yaml.Node, clones map[*yaml.Node]*yaml.Node) *yaml.Node {
@@ -233,9 +251,163 @@ func cloneNode(node *yaml.Node, clones map[*yaml.Node]*yaml.Node) *yaml.Node {
 	return &clone
 }
 
+func localizeAliases(root *yaml.Node) {
+	for {
+		present := make(map[*yaml.Node]struct{})
+		aliases := make([]*yaml.Node, 0)
+		collectSyntaxNodes(root, present, &aliases)
+
+		external := make([]*yaml.Node, 0)
+		for _, alias := range aliases {
+			if alias.Alias == nil {
+				continue
+			}
+			if _, exists := present[alias.Alias]; !exists {
+				external = append(external, alias)
+			}
+		}
+		if len(external) == 0 {
+			return
+		}
+
+		usedAnchors := make(map[string]struct{})
+		collectAnchorNames(root, usedAnchors, make(map[*yaml.Node]struct{}))
+		localized := make(map[*yaml.Node]*yaml.Node)
+		for _, alias := range external {
+			target := alias.Alias
+			if existing, exists := localized[target]; exists {
+				headComment := alias.HeadComment
+				lineComment := alias.LineComment
+				footComment := alias.FootComment
+				*alias = yaml.Node{
+					Kind:        yaml.AliasNode,
+					Value:       existing.Anchor,
+					Alias:       existing,
+					HeadComment: headComment,
+					LineComment: lineComment,
+					FootComment: footComment,
+				}
+				continue
+			}
+
+			cloneNodeInto(alias, target, make(map[*yaml.Node]*yaml.Node))
+			renameLocalAnchors(alias, usedAnchors)
+			if alias.Anchor == "" {
+				alias.Anchor = nextAnchorName(usedAnchors)
+			}
+			synchronizeAliasValues(alias)
+			localized[target] = alias
+		}
+	}
+}
+
+func collectSyntaxNodes(node *yaml.Node, present map[*yaml.Node]struct{}, aliases *[]*yaml.Node) {
+	if node == nil {
+		return
+	}
+	if _, exists := present[node]; exists {
+		return
+	}
+	present[node] = struct{}{}
+	if node.Kind == yaml.AliasNode {
+		*aliases = append(*aliases, node)
+	}
+	for _, child := range node.Content {
+		collectSyntaxNodes(child, present, aliases)
+	}
+}
+
+func collectAnchorNames(node *yaml.Node, names map[string]struct{}, seen map[*yaml.Node]struct{}) {
+	if node == nil {
+		return
+	}
+	if _, exists := seen[node]; exists {
+		return
+	}
+	seen[node] = struct{}{}
+	if node.Anchor != "" {
+		names[node.Anchor] = struct{}{}
+	}
+	for _, child := range node.Content {
+		collectAnchorNames(child, names, seen)
+	}
+}
+
+func cloneNodeInto(destination *yaml.Node, source *yaml.Node, clones map[*yaml.Node]*yaml.Node) {
+	if source == nil {
+		*destination = yaml.Node{}
+		return
+	}
+	clones[source] = destination
+	clone := *source
+	*destination = clone
+	destination.Alias = cloneNodeWithMap(source.Alias, clones)
+	destination.Content = make([]*yaml.Node, len(source.Content))
+	for index, child := range source.Content {
+		destination.Content[index] = cloneNodeWithMap(child, clones)
+	}
+}
+
+func cloneNodeWithMap(node *yaml.Node, clones map[*yaml.Node]*yaml.Node) *yaml.Node {
+	if node == nil {
+		return nil
+	}
+	if clone, exists := clones[node]; exists {
+		return clone
+	}
+	clone := new(yaml.Node)
+	cloneNodeInto(clone, node, clones)
+	return clone
+}
+
+func renameLocalAnchors(root *yaml.Node, used map[string]struct{}) {
+	nodes := make(map[*yaml.Node]struct{})
+	aliases := make([]*yaml.Node, 0)
+	collectSyntaxNodes(root, nodes, &aliases)
+	for node := range nodes {
+		if node.Anchor == "" {
+			continue
+		}
+		if _, collision := used[node.Anchor]; collision {
+			node.Anchor = nextAnchorName(used)
+		} else {
+			used[node.Anchor] = struct{}{}
+		}
+	}
+}
+
+func nextAnchorName(used map[string]struct{}) string {
+	for index := 1; ; index++ {
+		name := fmt.Sprintf("lpk_local_%d", index)
+		if _, exists := used[name]; exists {
+			continue
+		}
+		used[name] = struct{}{}
+		return name
+	}
+}
+
+func synchronizeAliasValues(root *yaml.Node) {
+	present := make(map[*yaml.Node]struct{})
+	aliases := make([]*yaml.Node, 0)
+	collectSyntaxNodes(root, present, &aliases)
+	for _, alias := range aliases {
+		if alias.Alias != nil {
+			alias.Value = alias.Alias.Anchor
+		}
+	}
+}
+
 func manifestError(op string, cause error) error {
 	if cause == nil {
 		return nil
 	}
 	return &lpkgo.Error{Code: lpkgo.CodeInvalidManifest, Op: op, Cause: cause}
+}
+
+func manifestYAMLError(op string, action string, cause error) error {
+	if cause == nil {
+		return nil
+	}
+	return manifestError(op, fmt.Errorf("YAML %s failed", action))
 }

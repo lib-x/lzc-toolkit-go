@@ -3,6 +3,7 @@ package manifest_test
 import (
 	"bytes"
 	"errors"
+	"strings"
 	"testing"
 
 	lpkgo "github.com/lib-x/lpk-go"
@@ -148,6 +149,92 @@ copy: *defaults
 	}
 }
 
+func TestDocumentSetPreservesAnchorAliases(t *testing.T) {
+	t.Parallel()
+
+	document, err := manifest.Parse([]byte(`settings: &settings
+  enabled: true
+copy: *settings
+copy2: *settings
+`))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if err := document.Set(map[string]bool{"enabled": false}, "settings"); err != nil {
+		t.Fatalf("Set() error = %v", err)
+	}
+
+	reparsed, err := manifest.Parse(mustDocumentBytes(t, document))
+	if err != nil {
+		t.Fatalf("Parse(Bytes()) error = %v", err)
+	}
+	var got map[string]map[string]bool
+	if err := reparsed.Decode(&got); err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	if got["settings"]["enabled"] || got["copy"]["enabled"] || got["copy2"]["enabled"] {
+		t.Fatalf("decoded aliases = %#v; want all enabled=false", got)
+	}
+}
+
+func TestDocumentDeleteMaterializesReferencedAnchor(t *testing.T) {
+	t.Parallel()
+
+	document, err := manifest.Parse([]byte(`settings: &settings
+  enabled: true
+copy: *settings
+copy2: *settings
+`))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if deleted := document.Delete("settings"); !deleted {
+		t.Fatal("Delete(settings) = false; want true")
+	}
+
+	reparsed, err := manifest.Parse(mustDocumentBytes(t, document))
+	if err != nil {
+		t.Fatalf("Parse(Bytes()) error = %v", err)
+	}
+	var got map[string]map[string]bool
+	if err := reparsed.Decode(&got); err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	if got["copy"] == nil || !got["copy"]["enabled"] {
+		t.Fatalf("decoded document = %#v; want materialized copy.enabled=true", got)
+	}
+	if got["copy2"] == nil || !got["copy2"]["enabled"] {
+		t.Fatalf("decoded document = %#v; want materialized copy2.enabled=true", got)
+	}
+	if _, exists := got["settings"]; exists {
+		t.Fatalf("decoded document = %#v; deleted settings remains", got)
+	}
+}
+
+func TestDocumentDecodeSanitizesYAMLErrorChain(t *testing.T) {
+	t.Parallel()
+
+	const secret = "SENSITIVE_TOKEN_ABC123"
+	const secretMarker = "SENSITI"
+	document, err := manifest.Parse([]byte("application:\n  background_task: " + secret + "\n"))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	var target manifest.Manifest
+	err = document.Decode(&target)
+	if !errors.Is(err, lpkgo.ErrInvalidManifest) {
+		t.Fatalf("Decode() error = %v; want INVALID_MANIFEST", err)
+	}
+	if errors.Unwrap(err) == nil {
+		t.Fatal("Decode() error has no safe cause")
+	}
+	for current := err; current != nil; current = errors.Unwrap(current) {
+		if strings.Contains(current.Error(), secretMarker) {
+			t.Fatalf("error chain leaked sensitive scalar %q through %T: %q", secret, current, current.Error())
+		}
+	}
+}
+
 func assertLookup(t *testing.T, document *manifest.Document, want any, path ...string) {
 	t.Helper()
 
@@ -158,4 +245,14 @@ func assertLookup(t *testing.T, document *manifest.Document, want any, path ...s
 	if !found || got != want {
 		t.Fatalf("Lookup(%q) = %#v, %v; want %#v, true", path, got, found, want)
 	}
+}
+
+func mustDocumentBytes(t *testing.T, document *manifest.Document) []byte {
+	t.Helper()
+
+	data, err := document.Bytes()
+	if err != nil {
+		t.Fatalf("Bytes() error = %v", err)
+	}
+	return data
 }
