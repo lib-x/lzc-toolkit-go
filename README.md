@@ -2,413 +2,756 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Go SDK for LazyCat LPK lifecycle primitives, based on `@lazycatcloud/lzc-cli`
-`2.0.8`.
+`lzc-toolkit-go` is a Go library for building, reading, inspecting, signing, deploying, and publishing LazyCat LPK packages. It follows the source and service contracts of `@lazycatcloud/lzc-cli` `2.0.8`, but it does not copy the CLI's prompts or terminal behavior.
 
-This repository is a library, not a CLI port. Packages are split by
-responsibility so callers can import lightweight LPK, manifest, inspect, lint,
-and signature APIs without pulling Docker, App Store, SSH, gRPC, or remote
-lifecycle integrations.
+If you are new to LazyCat, think of this repository as a set of composable building blocks. Your program decides when to build, which image backend to use, where credentials come from, and how results enter your CI/CD workflow.
 
-## Compatibility
+## What this library does
 
-Reference CLI:
+Common use cases include:
 
-- package: `@lazycatcloud/lzc-cli`
-- version: `2.0.8`
-- integrity: `sha512-CcH18fg1SBqTN4od7NCXMWYaAwjICgEuguphgNcb9Lp7v5+RDYa27+BEevC7faFFm8Zhjw3Rh/sinYc7fc39SA==`
-- shasum: `af9fece8a9756a00e093f817b3c3083971cc171f`
+- Build a LazyCat project into a `.lpk` file from Go.
+- Parse an uploaded LPK from an `io.Reader`, read its Manifest, or extract it safely.
+- Build embedded LPK images with the local Docker daemon.
+- Build images remotely through DebugBridge and deploy the app to a LazyCat device for preview.
+- Ask the LazyCat developer platform to copy a public image into `registry.lazycat.cloud`.
+- Log in, validate, upload, and submit an LPK from CI/CD.
+- Choose between general validation and LazyCat official submission checks.
 
-The goal is semantic compatibility with lzc-cli formats and service-facing
-contracts. Byte-identical archive output is not required.
+This is a library, not a CLI. It does not open login prompts, ask whether to overwrite a file, take over the terminal, or install SSH keys. The caller owns configuration, interaction, logging, and retry policy.
 
 ## Installation
+
+The module requires Go `1.25` or newer:
 
 ```bash
 go get github.com/lib-x/lzc-toolkit-go
 ```
 
-## Examples
+The base packages do not import or execute Docker, SSH, gRPC, or App Store integrations. Those dependencies are needed only when you import the corresponding optional package.
 
-Parse a manifest:
+## Core concepts
+
+| Concept | Meaning |
+|---------|---------|
+| LPK | A LazyCat application package, normally stored as a `.lpk` file. It can contain application metadata, a Manifest, static content, image layers, and signatures. |
+| Manifest | YAML that describes how the app runs, including the primary service, images, domains, routes, environment variables, and auxiliary services. The project file is usually `lzc-manifest.yml`; inside an LPK it is `manifest.yml`. |
+| `package.yml` | Static application metadata in LPK v2, including package ID, version, name, description, and locales. |
+| `lzc-build.yml` | Project build configuration. It points to the Manifest, content directory, icon, images, and exported resources. It is not the runtime Manifest. |
+| LPK v1 / v2 | Two compatible layouts. v1 keeps package metadata in the Manifest. v2 uses a separate `package.yml` and supports OCI images and resource exports. New projects normally use v2. |
+| OCI image layout | The LPK v2 representation of container images. `images.lock` describes images and layers; `images/` stores blobs that must travel inside the LPK. |
+| `ImageBuilder` | The `build` package is independent of Docker. Projects with images must explicitly select a local Docker or remote DebugBridge builder. |
+| General lint | Checks package and Manifest validity without applying LazyCat developer-platform preferences. |
+| Official lint | `lint.WithOfficial()` enables submission rules such as LazyCat Registry, icon, locale, and version requirements. |
+| Developer-platform token | Authenticates image copy, application creation, Testflight, and LPK submission. It is separate from ShellAPI credentials and SSH keys. |
+| ShellAPI | A local discovery API provided by the LazyCat client. It returns the default box, login UID, and client `dev.id`. |
+| DebugBridge | The protocol exposed by LazyCat Developer Tools for remote image builds, LPK installation, lifecycle control, commands, and logs. |
+| `project` | A lifecycle service built on DebugBridge, providing deploy, start, stop, wait, logs, exec, and file copy operations. |
+
+## How the pieces fit
+
+A project without images can be built directly. A project with images first selects a local or remote image backend:
+
+```text
+local project
+  -> build.Build / build.BuildFile
+  -> LPK
+     -> inspect / lint / signature        local processing
+     -> project + DebugBridge              preview on a LazyCat device
+     -> appstore.Publish                   submit to developer platform
+
+project with images
+  -> dockerlocal or buildpack
+  -> OCI image layout
+  -> build.Build
+  -> LPK
+```
+
+Image copy is a separate path:
+
+```text
+public Registry image
+  -> LazyCat developer-platform CopyImage API
+  -> registry.lazycat.cloud/... image reference
+```
+
+That copy runs on the developer platform. It does not require Docker on the caller's machine.
+
+## Choose a package
+
+| Task | Packages to import |
+|------|--------------------|
+| Read, write, or extract an LPK | `lpk` |
+| Parse and preprocess a Manifest | `manifest` |
+| Inspect an LPK summary | `inspect` |
+| Build a project | `build` |
+| Validate an OCI layout | `oci` |
+| Build images with local Docker | `image/dockerlocal` |
+| Build images through DebugBridge | `image/buildpack`, `remote/blobcache` |
+| Log in and obtain a token | `auth`, `auth/tokenfile` |
+| Copy images and publish LPKs | `appstore` |
+| Discover the local LazyCat client | `remote/shellapi` |
+| Use SSH and DebugBridge | `remote/ssh`, `remote/debugbridge` |
+| Deploy and manage an app | `project` |
+| Synchronize source files | `project/rsync` |
+| Orchestrate build, deploy, sync, and start | `workflow/project` |
+| Sign and verify packages | `signature` |
+
+## Tutorials
+
+The examples are ordered by external dependencies. The first needs only Go. The second needs local Docker. The third needs a LazyCat device and SSH. The fourth and fifth need a developer-platform token.
+
+| Scenario | Local Docker | Developer-platform token | LazyCat device and SSH |
+|----------|--------------|--------------------------|------------------------|
+| Build and parse an LPK without images | Not required | Not required | Not required |
+| Build embedded images locally | Required | Not required | Not required |
+| Build remotely and preview through DebugBridge | Not required; Docker runs remotely | Not required | Required |
+| Copy an image into LazyCat Registry | Not required; the platform copies it | Required | Not required |
+| Submit an LPK to the developer platform | Not required | Required | Not required |
+
+### Example 1: Build, parse, and inspect an LPK locally
+
+This example does not need Docker, a LazyCat account, or a device. It builds a static page as `hello.lpk`, then reads the package summary and effective Manifest.
+
+Project tree:
+
+```text
+hello-lpk/
+├── lzc-build.yml
+├── lzc-manifest.yml
+├── package.yml
+└── content/
+    └── html/
+        └── index.html
+```
+
+`hello-lpk/lzc-build.yml`:
+
+```yaml
+manifest: ./lzc-manifest.yml
+contentdir: ./content
+```
+
+`hello-lpk/package.yml`:
+
+```yaml
+package: cloud.lazycat.apps.hello
+version: 0.1.0
+name: Hello LPK
+locales:
+  zh:
+    name: 你好 LPK
+  en:
+    name: Hello LPK
+```
+
+`hello-lpk/lzc-manifest.yml`:
+
+```yaml
+application:
+  subdomain: hello
+  routes:
+    - /=file:///lzcapp/pkg/content/html
+```
+
+`hello-lpk/content/html/index.html` can be any static page:
+
+```html
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8">
+  <title>Hello LPK</title>
+  <h1>Hello LazyCat</h1>
+</html>
+```
+
+Build and read the LPK:
 
 ```go
-doc, err := manifest.Parse(data)
-if err != nil {
-    return err
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+
+    "github.com/lib-x/lzc-toolkit-go/build"
+    "github.com/lib-x/lzc-toolkit-go/inspect"
+    "github.com/lib-x/lzc-toolkit-go/lpk"
+)
+
+func main() {
+    ctx := context.Background()
+
+    result, err := build.BuildFile(ctx, "hello.lpk", build.Request{
+        Root:    "./hello-lpk",
+        ForceV2: true,
+        Strict:  true,
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    info, err := inspect.File(ctx, "hello.lpk")
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    reader, err := lpk.OpenFile(ctx, "hello.lpk")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer reader.Close()
+
+    effective, err := reader.EffectiveManifest(ctx)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    fmt.Printf("built %s %s as %s\n", result.Package, result.Version, result.Layout)
+    fmt.Printf("archive: %s, size: %d bytes\n", info.Format, info.Size)
+    fmt.Printf("subdomain: %s\n", effective.Manifest.Application.Subdomain)
 }
-var typed manifest.Manifest
-if err := doc.Decode(&typed); err != nil {
-    return err
-}
 ```
 
-Write an LPK to a buffer:
+The program creates `hello.lpk`. `BuildFile` uses atomic replacement, so a failed build does not leave a partial output file. `ForceV2` selects the layout where package ID and version live in `package.yml`.
 
-```go
-var out bytes.Buffer
-result, err := lpk.Write(ctx, &out, lpk.WriteRequest{
-    Layout: lpk.LayoutV2,
-    Files:  os.DirFS("package-root"),
-    Strict: true,
-})
-_ = result
-```
-
-Open an LPK from a stream:
-
-```go
-reader, err := lpk.Open(ctx, bytes.NewReader(pkg))
-if err != nil {
-    return err
-}
-defer reader.Close()
-effective, err := reader.EffectiveManifest(ctx)
-```
-
-Open an LPK without stream spooling when random access is already available:
-
-```go
-reader, err := lpk.OpenReaderAt(ctx, bytes.NewReader(pkg), int64(len(pkg)))
-if err != nil {
-    return err
-}
-defer reader.Close()
-```
-
-Use file helpers:
-
-```go
-result, err := lpk.WriteFile(ctx, "app.lpk", request)
-info, err := inspect.File(ctx, "app.lpk")
-_, _ = result, info
-```
-
-Build a project directly to a writer. Project scripts are disabled unless the
-request explicitly enables them:
+When the destination is already an `io.Writer`, use `build.Build`:
 
 ```go
 var output bytes.Buffer
 result, err := build.Build(ctx, &output, build.Request{
-    Root:       "./my-lzcapp",
-    ConfigFile: "lzc-build.yml",
-})
-_ = result
-```
-
-`build.BuildFile` uses atomic replacement. The build package supports the
-non-image project collection behavior of lzc-cli 2.0.8, including development
-config inheritance, manifest preprocessing, `contentdir`, `icon`, automatic
-`lzc-deploy-params.yml`, browser extensions, AI pod services,
-`compose_override`, package overrides, and resource exports. Image-bearing
-projects require an explicit local or remote `ImageBuilder`; without one,
-`build.Build` returns `INCOMPATIBLE_BACKEND`.
-
-Validate an extracted lzc-cli image layout without importing Docker support:
-
-```go
-report, err := oci.Validate(ctx, os.DirFS("package-root"))
-_ = report
-```
-
-The `oci` package also exposes `ReadLock`/`WriteLock`,
-`ReadIndex`/`WriteIndex`, and typed OCI descriptors. Embedded layer blobs are
-verified by streaming sha256; upstream layers are represented by
-`images.lock` and do not have to exist in the package.
-
-Image production is injected into `build.Request.ImageBuilder`. The adapter
-returns a package-relative `fs.FS`; build validates it with `oci.Validate`,
-copies only `images.lock` and `images/`, rewrites `embed:<alias>` references to
-the resolved image ID, and switches `content.tar` to `content.tar.gz`. This
-keeps Docker and remote builders out of the base build package.
-
-Opt into the local Docker adapter explicitly:
-
-```go
-result, err := build.Build(ctx, dst, build.Request{
-    Root:         "./my-lzcapp",
-    ImageBuilder: dockerlocal.New(nil),
+    Root:    "./hello-lpk",
+    ForceV2: true,
 })
 ```
 
-`dockerlocal.New(nil)` uses the Docker CLI behavior supported by lzc-cli
-2.0.8: `docker buildx build --load`, `docker image inspect`,
-`docker image save`, and best-effort cleanup. Tests can inject
-`dockerlocal.Engine`; importing `build`, `lpk`, `oci`, or `image` alone does
-not import or execute the Docker adapter. The local target defaults to
-`linux/amd64` and can be changed with `dockerlocal.WithPlatform`.
+`build.Build` does not close `output`. Likewise, `lpk.Open`, `inspect.Stream`, and publishing APIs do not close caller-owned readers.
 
-Use a CI/CD token directly, through `LZC_CLI_TOKEN`, or from an explicit
-store:
+Common failures:
 
-Developer-platform authentication supports two credential flows:
+- `INVALID_CONFIG`: check paths in `lzc-build.yml`, the package ID, and the version.
+- `INVALID_MANIFEST`: check YAML shapes and `application.subdomain`.
+- Manifest not found: confirm the configured path exists. The default is `lzc-manifest.yml`.
+- Build script did not run: scripts are disabled by default and run only when `RunBuildScript` is true.
 
-1. Username and password: `auth.Client.Login` sends them to the LazyCat
-   account service and returns `Session.Token`. The password is not stored. If
-   a `TokenStore` is configured, only the returned token is saved.
-2. Existing token: provide it through `auth.StaticToken`, the
-   `LZC_CLI_TOKEN` environment variable, or an explicit `TokenStore`. This is
-   the recommended flow for CI/CD.
+### Example 2: Build an image-bearing LPK with local Docker
 
-Developer account registration and permission requests are handled at
-<https://developer.lazycat.cloud/manage>.
+This scenario requires Docker on the caller's machine:
 
-If lzc-cli is already logged in on the local machine, resolve the token the
-same way as lzc-cli 2.0.8:
+- The `docker` executable must be available.
+- The Docker daemon must be running.
+- `docker buildx` must be available.
 
-- `LZC_CLI_TOKEN` takes precedence when it is set.
-- Otherwise, lzc-cli stores the token in the `token` field of
-  `~/.config/lazycat/box-config.json`.
-- `lzc-cli config get token` prints the effective token. Do not run it in a CI
-  log; copy the value into the CI secret store and expose it as
-  `LZC_CLI_TOKEN`.
+Importing `build`, `lpk`, `oci`, or `image` alone does not call Docker. The SDK executes Docker only after you explicitly pass `dockerlocal.New(...)`.
 
-The Go SDK does not silently read a user-level lzc-cli configuration file.
-To reuse it, pass the expanded file path explicitly as
-`tokenfile.Store{Path: tokenPath}`. The JSON format is compatible.
+Add `app/Dockerfile` and reference the image alias as `embed:app`:
 
-```go
-tokens := auth.Chain{
-    auth.EnvironmentToken{},
-    auth.StoreProvider{Store: tokenfile.Store{Path: tokenPath}},
-}
-client := appstore.New(appstore.Options{Token: tokens})
-result, err := client.CopyImage(ctx, appstore.CopyImageRequest{
-    Image:    "docker.io/example/app:1.0.0",
-    Platform: "amd64",
-})
-if err != nil {
-    return err
-}
-fmt.Println(result.LazyCatImage) // registry.lazycat.cloud/...
+```text
+docker-hello/
+├── app/
+│   └── Dockerfile
+├── lzc-build.yml
+├── lzc-manifest.yml
+└── package.yml
 ```
 
-The request protocol matches lzc-cli 2.0.8: login returns `data.token`,
-validation uses
-`X-User-Token`, and App Store calls use both `X-User-Token` and the
-`userToken` cookie. `CopyImage` starts a server-side copy at the LazyCat
-developer platform and polls its progress; it does not use local Docker or a
-remote LazyCat device Docker daemon. Its result also includes the submitted
-source image, selected platform, LazyCat registry image, and final layer
-progress so CI/CD callers do not need to parse logs or rely on callbacks.
+`docker-hello/lzc-build.yml`:
 
-Submit an LPK to the developer platform directly from an `io.Reader`:
-
-```go
-result, err := client.Publish(ctx, appstore.PublishRequest{
-    Package:    packageReader,
-    FileName:   "application.lpk",
-    Changelogs: map[string]string{"en": "Fix startup handling."},
-})
-if err != nil {
-    return err
-}
-fmt.Println(result.Upload.Package, result.Upload.Version)
+```yaml
+manifest: ./lzc-manifest.yml
+images:
+  app:
+    builder: local
+    context: ./app
+    dockerfile: ./app/Dockerfile
 ```
 
-`Publish` spools the stream with a configurable size limit, parses and runs
-official lint checks on the LPK, checks that the application exists, uploads
-the package, validates the returned package identity, and submits it for
-review. It never closes the caller-owned reader. Set `CreateIfMissing` and
-provide `Application` to explicitly permit application creation; the library
-never prompts interactively.
+`docker-hello/package.yml`:
 
-Trigger the Android APK shell endpoint without requiring App Store auth:
-
-```go
-apk, err := client.TriggerAPK(ctx, appstore.APKRequest{
-    AppID: "cloud.lazycat.apps.example",
-    Names: map[string]string{"zh": "示例", "en": "Example"},
-    Icon:  iconReader,
-})
+```yaml
+package: cloud.lazycat.apps.docker-hello
+version: 0.1.0
+name: Docker Hello
+locales:
+  zh:
+    name: Docker 示例
+  en:
+    name: Docker Hello
 ```
 
-This matches lzc-cli 2.0.8's unauthenticated multipart endpoint and five-second
-default timeout. The typed result exposes the HTTP status and whether the
-request was accepted or returned `304 Not Modified`.
+`docker-hello/lzc-manifest.yml`:
 
-## Authentication model
-
-Device lifecycle access and developer-platform publishing use different
-credentials, matching lzc-cli 2.0.8:
-
-- Local LazyCat client discovery uses the LightOS ShellAPI files
-  `shellapi_addr` and `shellapi_cred`. ShellAPI returns the default box, login
-  UID, and client ID; the credential is sent only as `lzc-shellapi-cred` gRPC
-  metadata.
-- Build-remote lifecycle operations use SSH access to the configured build
-  host plus the target LazyCat UID. The SDK never asks for or stores a device
-  account password. SSH key authorization remains the caller's responsibility.
-- Developer-platform operations (`Publish`, application creation, Testflight,
-  and image copy) use a platform token. `auth.Client.Login` can exchange a
-  username/password for `data.token`; when a store is configured, only the
-  token is persisted. CI should inject an existing token through
-  `LZC_CLI_TOKEN` or an explicit token store.
-- APK triggering is the same unauthenticated shell endpoint used by lzc-cli.
-
-This separation matters for CI/CD: a platform token is sufficient for App
-Store submission and registry-side image copy, while deployment to a real box
-also requires an independently authorized ShellAPI/SSH path.
-
-## ShellAPI discovery and build-remote transport
-
-ShellAPI discovery is optional and isolated in `remote/shellapi`:
-
-```go
-config, err := shellapi.LoadConfig(ctx, shellapi.ConfigOptions{})
-if err != nil {
-    return err
-}
-shell, err := shellapi.New(ctx, shellapi.Options{Config: config})
-if err != nil {
-    return err
-}
-defer shell.Close()
-
-box, err := shell.DefaultBox(ctx)
-clientID, err := shell.ClientID(ctx)
-_, _ = box, clientID // box.LoginUser is the LazyCat UID; clientID is dev.id
+```yaml
+application:
+  subdomain: docker-hello
+  image: embed:app
 ```
 
-`remote/ssh` implements lzc-cli's build-remote transport. It calls the remote
-host's `lzc-docker`, which in turn executes
-`/lzcapp/pkg/content/debug.bridge` inside
-`cloudlazycatdevelopertools-app-1`. It does not use a local Docker daemon:
+`docker-hello/app/Dockerfile`:
+
+```dockerfile
+FROM alpine:3.20
+CMD ["sh", "-c", "while true; do echo hello; sleep 30; done"]
+```
+
+Go program:
 
 ```go
-target, err := ssh.ParseTarget("developer", "build-host.example:22")
-if err != nil {
-    return err
-}
-runner := ssh.New(ssh.Options{Target: target})
-bridge := debugbridge.New(
-    runner,
-    runner.BridgeCommand,
-    debugbridge.WithUID(box.LoginUser),
-    debugbridge.WithHostCommand(runner.HostCommand),
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+
+    "github.com/lib-x/lzc-toolkit-go/build"
+    "github.com/lib-x/lzc-toolkit-go/image/dockerlocal"
 )
+
+func main() {
+    ctx := context.Background()
+    result, err := build.BuildFile(ctx, "docker-hello.lpk", build.Request{
+        Root:         "./docker-hello",
+        ForceV2:      true,
+        ImageBuilder: dockerlocal.New(nil),
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    fmt.Printf("images: %d\n", result.ImageCount)
+    fmt.Printf("resolved: %#v\n", result.ResolvedImages)
+}
 ```
 
-All transport constructors accept injected executors or dial options for tests.
-The SDK does not prompt, alter terminal state, or install SSH keys.
-
-## Remote image build and project lifecycle
-
-Use the DebugBridge client as the remote image backend without importing SSH
-into the base `build` package:
+`dockerlocal.New(nil)` uses the Docker CLI backend and targets `linux/amd64`. Select another platform explicitly:
 
 ```go
-cache := blobcache.New(projectDir)
-remoteImages := buildpack.New(bridge, cache)
-var packageData bytes.Buffer
-built, err := build.Build(ctx, &packageData, build.Request{
-    Root:         projectDir,
-    ConfigFile:   "lzc-build.dev.yml",
-    ForceV2:      true,
-    ImageBuilder: remoteImages,
-})
+builder := dockerlocal.New(nil, dockerlocal.WithPlatform("linux/arm64"))
 ```
 
-The remote builder creates deterministic Docker contexts from Dockerfile
-`COPY`/`ADD` sources, honors `.dockerignore`, uses the backend blob cache, and
-materializes an OCI layout verified by `oci.Validate`.
+The adapter runs the lzc-cli 2.0.8 compatible `docker buildx build --load`, `docker image inspect`, and `docker image save` flow, then converts the result into the LPK v2 OCI layout. `images.lock` describes the image and its layers; `images/` contains only blobs embedded in the package. The builder appends the resolved image digest to `embed:app`.
 
-Create the dependency-light project service and deploy a caller-owned LPK
-reader:
+Common failures:
+
+- `INCOMPATIBLE_BACKEND`: the project has images but no `ImageBuilder`, or a remote image configuration was sent to the local builder.
+- `COMMAND_FAILED`: the Docker CLI, Dockerfile, or base image pull failed.
+- `INTEGRITY_MISMATCH`: the generated OCI layout, digest, or blob is inconsistent.
+
+### Example 3: Deploy to a LazyCat device for preview
+
+In this workflow, source editing stays local while images and services run on the LazyCat or build-remote side. You open the resulting app through the normal LazyCat client entry.
+
+DebugBridge does not expose a process listening on your computer's `localhost:3000` to the device. Previewing a local process requires a separate reverse tunnel or proxy; that is not part of the current SDK or lzc-cli 2.0.8 DebugBridge contract.
+
+Prerequisites:
+
+- The LazyCat client is installed and logged in, with ShellAPI files available.
+- A default box is selected.
+- Developer Tools is installed and enabled on the target.
+- The build-remote host is reachable through SSH.
+- SSH public-key authorization is already configured. The SDK does not install keys.
+- The remote DebugBridge version supports the requested capabilities.
+
+The following variables belong to this example program. They are not SDK-defined environment variables:
+
+```bash
+export LZC_BUILD_REMOTE_USER=developer
+export LZC_BUILD_REMOTE_ADDR=build-host.example:22
+```
+
+The complete path includes ShellAPI discovery, SSH transport, remote image building, LPK installation, and app startup:
 
 ```go
-projects, err := project.New(project.Options{Backend: bridge})
-if err != nil {
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "os"
+    "path/filepath"
+
+    "github.com/lib-x/lzc-toolkit-go/build"
+    "github.com/lib-x/lzc-toolkit-go/image/buildpack"
+    "github.com/lib-x/lzc-toolkit-go/project"
+    "github.com/lib-x/lzc-toolkit-go/remote/blobcache"
+    "github.com/lib-x/lzc-toolkit-go/remote/debugbridge"
+    "github.com/lib-x/lzc-toolkit-go/remote/shellapi"
+    "github.com/lib-x/lzc-toolkit-go/remote/ssh"
+)
+
+func main() {
+    if err := run(); err != nil {
+        log.Fatal(err)
+    }
+}
+
+func run() error {
+    ctx := context.Background()
+    projectDir := "./docker-hello"
+    packagePath := filepath.Join(os.TempDir(), "docker-hello-dev.lpk")
+
+    config, err := shellapi.LoadConfig(ctx, shellapi.ConfigOptions{})
+    if err != nil {
+        return err
+    }
+    shell, err := shellapi.New(ctx, shellapi.Options{Config: config})
+    if err != nil {
+        return err
+    }
+    defer shell.Close()
+
+    box, err := shell.DefaultBox(ctx)
+    if err != nil {
+        return err
+    }
+    devID, err := shell.ClientID(ctx)
+    if err != nil {
+        return err
+    }
+
+    target, err := ssh.ParseTarget(
+        os.Getenv("LZC_BUILD_REMOTE_USER"),
+        os.Getenv("LZC_BUILD_REMOTE_ADDR"),
+    )
+    if err != nil {
+        return err
+    }
+    runner := ssh.New(ssh.Options{Target: target})
+    bridge := debugbridge.New(
+        runner,
+        runner.BridgeCommand,
+        debugbridge.WithUID(box.LoginUser),
+        debugbridge.WithHostCommand(runner.HostCommand),
+    )
+
+    remoteImages := buildpack.New(bridge, blobcache.New(projectDir))
+    built, err := build.BuildFile(ctx, packagePath, build.Request{
+        Root:         projectDir,
+        ConfigFile:   "lzc-build.dev.yml",
+        ForceV2:      true,
+        ImageBuilder: remoteImages,
+    })
+    if err != nil {
+        return err
+    }
+
+    packageFile, err := os.Open(packagePath)
+    if err != nil {
+        return err
+    }
+    defer packageFile.Close()
+
+    projects, err := project.New(project.Options{Backend: bridge})
+    if err != nil {
+        return err
+    }
+    if _, err := projects.Deploy(ctx, project.DeployRequest{
+        Package:   packageFile,
+        PackageID: built.Package,
+        DevID:     devID,
+    }); err != nil {
+        return err
+    }
+
+    running, err := projects.Start(ctx, project.StartRequest{
+        AppID:        built.Package,
+        LocalVersion: built.Version,
+    })
+    if err != nil {
+        return err
+    }
+    fmt.Printf("running: %s, domain: %s\n", running.AppID, running.Domain)
+
+    follow := false
+    _, err = projects.Logs(ctx, project.LogRequest{
+        AppID:   built.Package,
+        Follow:  &follow,
+        Stdout:  os.Stdout,
+        Stderr:  os.Stderr,
+    })
     return err
 }
-deployed, err := projects.Deploy(ctx, project.DeployRequest{
-    Package:   bytes.NewReader(packageData.Bytes()),
-    PackageID: built.Package,
-    DevID:     clientID,
-    UserApp:   false,
-})
-if err != nil {
-    return err
+```
+
+This example expects an `lzc-build.dev.yml` whose image entries use the remote builder. The remote builder creates deterministic contexts from Dockerfile `COPY` and `ADD` sources, honors `.dockerignore`, and uses the per-project blob cache.
+
+An iterative development loop can also combine:
+
+- `project/rsync.Sync` to synchronize local source into `/lzcapp/cache/project-mirror`.
+- `project.Exec` to run commands or restart the development process.
+- `project.CopyTo` to copy a local directory through a TAR stream.
+- `project.Logs` to read once or follow logs.
+
+The SDK does not include a filesystem watcher. The caller selects a watcher, invokes `Sync` after changes, and applies the project's restart policy.
+
+### Example 4: Copy a public image into LazyCat Registry
+
+This operation does not require Docker on the caller's machine.
+
+You need only:
+
+- Network access to the LazyCat developer platform.
+- A valid developer-platform token.
+- A source image that the developer platform can pull.
+
+The developer platform performs the copy. The operation does not use local Docker, a box Docker daemon, ShellAPI, or SSH.
+
+Expose the token through the environment:
+
+```bash
+export LZC_CLI_TOKEN='your-token'
+```
+
+Do not put a real token in source code or commit it to Git.
+
+Complete example:
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "time"
+
+    "github.com/lib-x/lzc-toolkit-go/appstore"
+    "github.com/lib-x/lzc-toolkit-go/auth"
+)
+
+func main() {
+    ctx := context.Background()
+    client := appstore.New(appstore.Options{
+        Token: auth.EnvironmentToken{},
+    })
+
+    result, err := client.CopyImage(ctx, appstore.CopyImageRequest{
+        Image:    "docker.io/library/alpine:3.20",
+        Platform: "amd64",
+        Timeout:  20 * time.Minute,
+        OnProgress: func(progress appstore.CopyProgress) {
+            fmt.Printf("finished=%v layers=%d\n", progress.Finished, len(progress.Layers))
+        },
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    fmt.Println(result.LazyCatImage)
 }
-running, err := projects.Start(ctx, project.StartRequest{
-    AppID: built.Package, LocalVersion: built.Version,
-})
-_, _ = deployed, running
 ```
 
-Backends before `1.0.4` wait for the app container before dev.id sync; newer
-backends use pending sync. `Start`, `Stop`, `Wait`, and `Uninstall` expose
-explicit state and deletion semantics.
+`LazyCatImage` is the resulting `registry.lazycat.cloud/...` reference. The result also preserves the source image, selected platform, and final layer state, so CI/CD callers do not need to parse terminal output.
 
-Project command APIs stream through caller-owned readers and writers:
+The lzc-cli 2.0.8 and Go SDK `CopyImageRequest` contracts have no source Registry username, password, or token field. Callers cannot add private Registry credentials through this API and must ensure that the developer platform can pull the source image.
+
+### Example 5: Log in and submit an LPK
+
+Developer-platform authentication supports two flows.
+
+#### Flow 1: Exchange username and password for a token
+
+`auth.Client.Login` submits credentials to `https://account.lazycat.cloud/api/login/signin` and returns `Session.Token`. The password is not stored. When a `TokenStore` is configured, only the token is saved.
 
 ```go
-tty := false
-_, err = projects.Exec(ctx, project.ExecRequest{
-    AppID: built.Package, Service: "app",
-    Command: []string{"/bin/sh", "-lc", "go test ./..."},
-    Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, TTY: &tty,
-})
-_, err = projects.Logs(ctx, project.LogRequest{
-    AppID: built.Package, Stdout: os.Stdout, // follow defaults to true
-})
-_, err = projects.CopyTo(ctx, project.CopyRequest{
-    AppID: built.Package, SourcePath: "./config", Destination: "/opt/app/config",
-})
+package main
+
+import (
+    "context"
+    "log"
+    "os"
+    "path/filepath"
+
+    "github.com/lib-x/lzc-toolkit-go/auth"
+    "github.com/lib-x/lzc-toolkit-go/auth/tokenfile"
+)
+
+func main() {
+    ctx := context.Background()
+    home, err := os.UserHomeDir()
+    if err != nil {
+        log.Fatal(err)
+    }
+    tokenPath := filepath.Join(home, ".config", "lazycat", "box-config.json")
+    account := auth.NewClient(auth.ClientOptions{
+        Store: tokenfile.Store{Path: tokenPath},
+    })
+    session, err := account.Login(ctx, auth.Credentials{
+        Username: os.Getenv("LZC_USERNAME"),
+        Password: os.Getenv("LZC_PASSWORD"),
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+    if err := account.Validate(ctx, session.Token); err != nil {
+        log.Fatal(err)
+    }
+}
 ```
 
-`Exec` defaults to service `app`, command `/bin/sh`, and workdir
-`/lzcapp/cache/project-mirror`. `CopyTo` streams a TAR directly to
-`lzc-docker cp -`; it does not create a temporary TAR file.
+Keeping an account password in CI is not recommended. Log in once from a trusted environment, save the token in the CI secret store, and inject it at runtime.
 
-Use the optional `project/rsync` package for one-shot source synchronization:
+#### Flow 2: Provide an existing token
+
+The SDK supports:
+
+- `auth.StaticToken` for a caller-provided value.
+- `auth.EnvironmentToken`, which reads `LZC_CLI_TOKEN` by default.
+- `auth.StoreProvider` for an explicit `TokenStore`.
+
+When lzc-cli is already logged in, lzc-cli 2.0.8 resolves the token in this order:
+
+1. Use `LZC_CLI_TOKEN` when it is set.
+2. Otherwise read the `token` field from `~/.config/lazycat/box-config.json`.
+
+`lzc-cli config get token` prints the effective token, but should not be run in CI logs. The Go SDK does not read the user-level file implicitly; configure `tokenfile.Store{Path: tokenPath}` explicitly.
+
+Submit an LPK that already passes official lint:
 
 ```go
-syncResult, err := projectrsync.Sync(ctx, projectrsync.Options{
-    RootDir: projectDir,
-    Target: projectrsync.Target{
-        UID: box.LoginUser, Host: rsyncHost,
-        PackageID: built.Package, UserApp: false,
-        Directory: projectrsync.DefaultTarget,
-    },
-    Delete: true,
-    Stdout: os.Stdout,
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "os"
+
+    "github.com/lib-x/lzc-toolkit-go/appstore"
+    "github.com/lib-x/lzc-toolkit-go/auth"
+)
+
+func main() {
+    ctx := context.Background()
+    packageFile, err := os.Open("application.lpk")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer packageFile.Close()
+
+    client := appstore.New(appstore.Options{
+        Token: auth.EnvironmentToken{},
+    })
+    published, err := client.Publish(ctx, appstore.PublishRequest{
+        Package:  packageFile,
+        FileName: "application.lpk",
+        Changelogs: map[string]string{
+            "zh": "修复启动流程。",
+            "en": "Fix startup handling.",
+        },
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("submitted %s %s\n", published.Upload.Package, published.Upload.Version)
+}
+```
+
+`Publish` performs these steps:
+
+1. Spool the stream under the configured size limit.
+2. Parse and safely extract the LPK.
+3. Run `lint.WithOfficial()` checks.
+4. Check whether the application exists on the developer platform.
+5. Upload the LPK and validate the returned package ID.
+6. Submit the localized changelog for review.
+
+`Publish` does not close `packageFile`. To permit automatic application creation, set `CreateIfMissing: true` and provide `Application`; the library never asks interactively.
+
+An official submission usually also requires:
+
+- Images from `registry.lazycat.cloud` or valid embedded images.
+- A PNG `icon.png` no larger than 200 KiB.
+- `locales` in `package.yml`.
+- A SemVer version.
+- No devshell in the submitted package.
+
+## Advanced reference
+
+### LPK Reader and Writer
+
+Write to any `io.Writer`:
+
+```go
+result, err := lpk.Write(ctx, dst, lpk.WriteRequest{
+    Layout: lpk.LayoutV2,
+    Files:  os.DirFS("package-root"),
+    Strict: true,
 })
 ```
 
-The adapter requires rsync `3.2.0+`, creates `.lzcdevignore` from lzc-cli's
-defaults and `.gitignore`, and passes the daemon password only in the child
-environment. `BuildTunnelArgs` produces the exact SSH local-forward argv for a
-build-remote rsync target. Watch mode is intentionally caller-owned: invoke
-`Sync` again from the filesystem watcher appropriate for your application.
+Open a sequential stream. The implementation spools it into bounded temporary storage:
 
-For complete build → deploy → sync → start orchestration, import the optional
-`workflow/project` package. It spools the LPK to a temporary file, returns
-typed results for every completed stage, cleans the artifact on success and
-failure, and emits safe `workflow.Event` values through an observer.
+```go
+reader, err := lpk.Open(ctx, src)
+```
 
-Lint an extracted package root:
+Avoid whole-stream spooling when random access is available:
+
+```go
+reader, err := lpk.OpenReaderAt(ctx, src, size)
+```
+
+`Reader` can list entries, read the Manifest and `package.yml`, open a single entry, extract safely, and return the effective merged Manifest. Archive parsing supports configurable size, path, and entry-count limits.
+
+### Lint
+
+Check an extracted LPK root:
 
 ```go
 warnings, err := lint.Package(ctx, os.DirFS("package-root"))
-_ = warnings
 ```
 
-Enable LazyCat official/developer-platform checks only when preparing an
-official submission:
+Before submitting to the LazyCat developer platform:
 
 ```go
-officialWarnings, err := lint.Package(ctx, os.DirFS("package-root"), lint.WithOfficial())
-_ = officialWarnings
+warnings, err := lint.Package(
+    ctx,
+    os.DirFS("package-root"),
+    lint.WithOfficial(),
+)
 ```
 
-`WithOfficial` mirrors the optional lzc-cli `2.0.8` pre-publish preferences:
-`registry.lazycat.cloud` image refs, `icon.png` presence/PNG/200 KiB limit,
-`locales`, semver versions, devshell rejection, and embedded image blob checks.
-Those warnings are not enabled by default because they do not necessarily mean
-the LPK is uninstallable.
+Official rules are disabled by default because Registry, icon, locale, SemVer, and devshell restrictions are platform submission preferences, not universal LPK validity rules.
 
-Sign and verify:
+### ShellAPI, SSH, and authentication boundaries
+
+| Operation | Credential |
+|-----------|------------|
+| Discover the default box and `dev.id` | LazyCat client `shellapi_addr` and `shellapi_cred` |
+| build-remote, DebugBridge, deployment | Target-host SSH authorization and LazyCat UID |
+| Image copy, application creation, Testflight, LPK submission | Developer-platform token |
+| APK Shell trigger | No App Store token, matching lzc-cli 2.0.8 |
+
+Default ShellAPI directories:
+
+- Linux: `~/.config/hportal-client/`
+- macOS: `~/Library/Application Support/hportal-client/`
+- Windows: `~/AppData/Roaming/hportal-client/`
+
+### Project lifecycle
+
+`project.Service` provides:
+
+- `Deploy` to install a caller-provided LPK and synchronize `dev.id`.
+- `Start`, `Stop`, and `Wait` for explicit state transitions.
+- `Uninstall` with optional application-data deletion.
+- `Exec` with caller-owned input and output streams.
+- `Logs` for one-shot or follow mode.
+- `CopyTo` using a TAR stream sent directly to `lzc-docker cp -`.
+
+Backends before `1.0.4` wait for the devshell container before synchronizing `dev.id`; newer backends use pending sync.
+
+### rsync and complete workflow
+
+`project/rsync` requires rsync `3.2.0+`. It creates `.lzcdevignore` from lzc-cli defaults and `.gitignore`, and passes the rsync daemon password only through the child process environment.
+
+`workflow/project` composes build, deployment, optional synchronization, and startup. It joins stages with a temporary LPK, returns typed results, and emits credential-safe events through an Observer.
+
+### Sign and verify
 
 ```go
 signed, err := signature.SignFile(ctx, "app.signed.lpk", "app.lpk", signature.SignRequest{
@@ -416,17 +759,51 @@ signed, err := signature.SignFile(ctx, "app.signed.lpk", "app.lpk", signature.Si
     PublicKeyPEM:  publicPEM,
     KeyID:         "dev",
 })
-_ = signed
-verified, err := signature.VerifyFile(ctx, "app.signed.lpk", signature.VerifyRequest{KeyID: "dev"})
-_ = verified
+verified, err := signature.VerifyFile(ctx, "app.signed.lpk", signature.VerifyRequest{
+    KeyID: "dev",
+})
+_, _ = signed, verified
 ```
+
+### Other developer-platform APIs
+
+`appstore` also provides:
+
+- `ListImages` to list images copied into LazyCat Registry.
+- Testflight APIs for internal-test releases.
+- `TriggerAPK` for the lzc-cli 2.0.8 anonymous Android APK Shell multipart endpoint, with a five-second default timeout.
+
+### Common error codes
+
+| Code | First thing to check |
+|------|----------------------|
+| `INVALID_ARGUMENT` | Nil Reader, Writer, or Context; empty path or package ID. |
+| `INVALID_CONFIG` | YAML paths, package ID, version, image aliases, and required configuration. |
+| `INVALID_MANIFEST` | Manifest YAML, `application.subdomain`, and field shapes. |
+| `INCOMPATIBLE_BACKEND` | Correct local or remote `ImageBuilder`; remote backend version. |
+| `UNAUTHENTICATED` | `LZC_CLI_TOKEN`, token file, or login result exists and remains valid. |
+| `PERMISSION_DENIED` | The developer account is allowed to operate on the application. |
+| `REMOTE_UNAVAILABLE` | Developer platform, ShellAPI, SSH, or DebugBridge is reachable. |
+| `COMMAND_FAILED` | Docker, SSH, rsync, or remote command exit status. |
+| `INTEGRITY_MISMATCH` | LPK entry, digest, signature, or OCI blob integrity. |
+| `DEADLINE_EXCEEDED` | Image copy, app startup, or state wait exceeded its timeout. |
+
+## Compatibility
+
+Implementation baseline:
+
+- package: `@lazycatcloud/lzc-cli`
+- version: `2.0.8`
+- integrity: `sha512-CcH18fg1SBqTN4od7NCXMWYaAwjICgEuguphgNcb9Lp7v5+RDYa27+BEevC7faFFm8Zhjw3Rh/sinYc7fc39SA==`
+- shasum: `af9fece8a9756a00e093f817b3c3083971cc171f`
+
+The compatibility target is lzc-cli file formats and service-facing semantics. Byte-identical archives are not required. The `version` package reports both this SDK's version and the exact lzc-cli reference version for future compatibility upgrades.
 
 ## Security
 
-All blocking operations accept `context.Context` except key generation, which
-only writes local key files. Stream APIs do not close caller-owned readers or
-writers. Archive parsing and extraction enforce configurable size/path/count
-limits and use Go 1.25 `os.Root` APIs for safe extraction.
-
-Errors and workflow events must not contain passwords, tokens, private keys,
-authorization headers, or raw credential-bearing responses.
+- Every blocking operation accepts `context.Context` except key generation, which writes only local key files.
+- Streaming APIs do not close caller-owned readers or writers.
+- Token persistence uses caller-selected paths; `auth/tokenfile` writes atomically with `0600` permissions.
+- Errors and workflow events do not contain passwords, tokens, private keys, authorization headers, or raw credential-bearing responses.
+- Archive parsing and extraction enforce configurable size, path, and entry-count limits and use Go 1.25 `os.Root` to constrain filesystem writes.
+- The SDK does not return raw sensitive remote-command output in errors. Callers can route explicitly selected log streams into their own writers.

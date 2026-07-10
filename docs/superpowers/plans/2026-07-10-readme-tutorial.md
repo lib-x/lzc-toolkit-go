@@ -1,6 +1,6 @@
 # README Tutorial Rewrite Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
 **Goal:** Rewrite both README files as tutorial-first documentation with context, complete examples for local LPK work, local Docker images, LazyCat device preview, server-side image copy, and CI/CD publishing.
 
@@ -34,7 +34,7 @@
 - Consumes: current compatibility metadata and package responsibilities.
 - Produces: stable headings used by all later examples.
 
-- [ ] **Step 1: Replace the opening section order in both files**
+- [x] **Step 1: Replace the opening section order in both files**
 
 Use these equivalent headings:
 
@@ -50,11 +50,11 @@ Compatibility / 兼容性
 Security / 安全性
 ```
 
-- [ ] **Step 2: Add a glossary table**
+- [x] **Step 2: Add a glossary table**
 
 Cover LPK, Manifest, `lzc-build.yml`, LPK v1/v2, OCI image layout, `ImageBuilder`, official lint, developer-platform token, ShellAPI, DebugBridge, and `project`. Each description must answer what it is and when the reader needs it.
 
-- [ ] **Step 3: Add the workflow map**
+- [x] **Step 3: Add the workflow map**
 
 ```text
 local project
@@ -71,11 +71,11 @@ project with images
   -> LPK
 ```
 
-- [ ] **Step 4: Add the package-choice table**
+- [x] **Step 4: Add the package-choice table**
 
 Map each user task to `lpk`, `manifest`, `build`, `image/dockerlocal`, `image/buildpack`, `auth`, `appstore`, `remote/shellapi`, `remote/ssh`, `remote/debugbridge`, `project`, and `workflow/project`.
 
-- [ ] **Step 5: Verify the bilingual outline**
+- [x] **Step 5: Verify the bilingual outline**
 
 Run:
 
@@ -85,7 +85,7 @@ rg -n '^## ' README.md README.zh-CN.md
 
 Expected: both files show the same major section count and matching order.
 
-- [ ] **Step 6: Commit the onboarding structure**
+- [x] **Step 6: Commit the onboarding structure**
 
 ```bash
 git add README.md README.zh-CN.md
@@ -102,7 +102,7 @@ git commit -m "docs: explain LazyCat toolkit concepts"
 - Consumes: `build.BuildFile`, `inspect.File`, `lpk.OpenFile`, `Reader.EffectiveManifest`.
 - Produces: the first runnable example, requiring only Go and local files.
 
-- [ ] **Step 1: Document this project tree**
+- [x] **Step 1: Document this project tree**
 
 ```text
 hello-lpk/
@@ -114,7 +114,7 @@ hello-lpk/
         └── index.html
 ```
 
-- [ ] **Step 2: Add the exact configuration files**
+- [x] **Step 2: Add the exact configuration files**
 
 `lzc-build.yml`:
 
@@ -145,7 +145,7 @@ application:
     - /=file:///lzcapp/pkg/content/html
 ```
 
-- [ ] **Step 3: Add a complete Go program**
+- [x] **Step 3: Add a complete Go program**
 
 ```go
 package main
@@ -193,15 +193,15 @@ func main() {
 }
 ```
 
-- [ ] **Step 4: Explain inputs, output, and ownership**
+- [x] **Step 4: Explain inputs, output, and ownership**
 
 State that `BuildFile` atomically writes `hello.lpk`, `ForceV2` selects the split `package.yml` and `manifest.yml` layout, and `OpenFile` owns its internal file resource until `Close`. Also show the `io.Writer` alternative with `build.Build` and state that the SDK does not close caller-owned readers or writers.
 
-- [ ] **Step 5: Document common failures**
+- [x] **Step 5: Document common failures**
 
 Explain missing `application.subdomain`, invalid package ID, missing Manifest, and build scripts being disabled unless `RunBuildScript` is true.
 
-- [ ] **Step 6: Commit the local tutorial**
+- [x] **Step 6: Commit the local tutorial**
 
 ```bash
 git add README.md README.zh-CN.md
@@ -218,11 +218,11 @@ git commit -m "docs: add local LPK tutorial"
 - Consumes: `build.Request.ImageBuilder`, `dockerlocal.New`, `dockerlocal.WithPlatform`.
 - Produces: a complete image-bearing LPK build example.
 
-- [ ] **Step 1: State the exact prerequisites**
+- [x] **Step 1: State the exact prerequisites**
 
 Require a local `docker` executable, a running Docker daemon, and `docker buildx`. State that importing `build`, `lpk`, or `oci` alone does not invoke Docker.
 
-- [ ] **Step 2: Add the image configuration**
+- [x] **Step 2: Add the image configuration**
 
 `lzc-build.yml`:
 
@@ -250,7 +250,7 @@ FROM alpine:3.20
 CMD ["sh", "-c", "while true; do echo hello; sleep 30; done"]
 ```
 
-- [ ] **Step 3: Add the complete build call**
+- [x] **Step 3: Add the complete build call**
 
 ```go
 result, err := build.BuildFile(ctx, "docker-hello.lpk", build.Request{
@@ -262,15 +262,15 @@ result, err := build.BuildFile(ctx, "docker-hello.lpk", build.Request{
 
 Also show `dockerlocal.New(nil, dockerlocal.WithPlatform("linux/arm64"))` and state that the default is `linux/amd64`.
 
-- [ ] **Step 4: Explain image output**
+- [x] **Step 4: Explain image output**
 
 Describe `images.lock`, `images/`, embedded layer blobs, upstream layers, and `Result.ResolvedImages`. Explain that `embed:app` is rewritten with the resolved image digest.
 
-- [ ] **Step 5: Add failure guidance**
+- [x] **Step 5: Add failure guidance**
 
 Map `INCOMPATIBLE_BACKEND` to a missing or mismatched image builder, `COMMAND_FAILED` to Docker CLI/build failures, and OCI validation errors to malformed image output.
 
-- [ ] **Step 6: Commit the Docker tutorial**
+- [x] **Step 6: Commit the Docker tutorial**
 
 ```bash
 git add README.md README.zh-CN.md
@@ -287,15 +287,15 @@ git commit -m "docs: add local Docker image tutorial"
 - Consumes: `shellapi.LoadConfig`, `shellapi.New`, `Client.DefaultBox`, `Client.ClientID`, `ssh.ParseTarget`, `ssh.New`, `debugbridge.New`, `buildpack.New`, `blobcache.New`, `project.New`, `Service.Deploy`, `Service.Start`, `Service.Logs`.
 - Produces: an end-to-end remote build and deployment sequence.
 
-- [ ] **Step 1: Define preview accurately**
+- [x] **Step 1: Define preview accurately**
 
 State that source editing happens locally, while images and the service run on the LazyCat/build-remote side. State that DebugBridge does not reverse-proxy a local `localhost` port to the device.
 
-- [ ] **Step 2: List prerequisites**
+- [x] **Step 2: List prerequisites**
 
 Require the LazyCat client ShellAPI files, a default device, Developer Tools, an SSH-authorized build-remote target, a LazyCat UID, and a compatible DebugBridge backend. Explain that App Store token is unrelated to this path.
 
-- [ ] **Step 3: Add the transport construction**
+- [x] **Step 3: Add the transport construction**
 
 ```go
 config, err := shellapi.LoadConfig(ctx, shellapi.ConfigOptions{})
@@ -316,7 +316,7 @@ bridge := debugbridge.New(
 
 The final README program must check every returned error before continuing.
 
-- [ ] **Step 4: Add remote build, deploy, start, and logs**
+- [x] **Step 4: Add remote build, deploy, start, and logs**
 
 ```go
 remoteImages := buildpack.New(bridge, blobcache.New(projectDir))
@@ -342,11 +342,11 @@ _, err = projects.Logs(ctx, project.LogRequest{
 })
 ```
 
-- [ ] **Step 5: Explain iterative development**
+- [x] **Step 5: Explain iterative development**
 
 Describe `project/rsync.Sync`, `project.Exec`, `project.CopyTo`, and `project.Logs`. State that the caller chooses a filesystem watcher and restart policy.
 
-- [ ] **Step 6: Commit the device tutorial**
+- [x] **Step 6: Commit the device tutorial**
 
 ```bash
 git add README.md README.zh-CN.md
@@ -363,11 +363,11 @@ git commit -m "docs: add LazyCat device preview tutorial"
 - Consumes: `auth.NewClient`, `Client.Login`, `auth.EnvironmentToken`, `auth.StoreProvider`, `tokenfile.Store`, `appstore.New`, `Client.CopyImage`, `Client.Publish`.
 - Produces: separate examples for login, image copy, and LPK submission.
 
-- [ ] **Step 1: Explain both token sources**
+- [x] **Step 1: Explain both token sources**
 
 Document username/password exchange through `POST https://account.lazycat.cloud/api/login/signin` and direct token injection. For existing lzc-cli login, state the precedence `LZC_CLI_TOKEN` then `~/.config/lazycat/box-config.json` field `token`; mention `lzc-cli config get token` without encouraging logging secrets.
 
-- [ ] **Step 2: Add a complete server-side image copy program**
+- [x] **Step 2: Add a complete server-side image copy program**
 
 ```go
 package main
@@ -404,19 +404,19 @@ func main() {
 
 State next to the code: local Docker is not required; only network access and developer-platform token are required. The request contains no source Registry username/password field, so callers cannot add private Registry credentials through this API.
 
-- [ ] **Step 3: Add the password-login variant**
+- [x] **Step 3: Add the password-login variant**
 
 Show `auth.NewClient(auth.ClientOptions{Store: tokenfile.Store{Path: tokenPath}}).Login(...)`, state that only the returned token is stored, and recommend CI secrets instead of keeping account passwords in pipelines.
 
-- [ ] **Step 4: Add the publish program**
+- [x] **Step 4: Add the publish program**
 
 Open the built LPK with `os.Open`, call `appstore.New` with `auth.EnvironmentToken{}`, and call `Publish` with a non-empty localized changelog. Explain `CreateIfMissing` and `Application` without enabling them by default.
 
-- [ ] **Step 5: Explain the publish sequence**
+- [x] **Step 5: Explain the publish sequence**
 
 Document stream spooling, LPK parsing, official lint, application existence check, upload, package identity validation, and review submission. State that `Publish` does not close the caller-owned LPK reader.
 
-- [ ] **Step 6: Commit the platform tutorials**
+- [x] **Step 6: Commit the platform tutorials**
 
 ```bash
 git add README.md README.zh-CN.md
@@ -434,19 +434,19 @@ git commit -m "docs: add image copy and publishing tutorials"
 - Consumes: all tutorial sections.
 - Produces: concise advanced reference, bilingual parity, and verified documentation.
 
-- [ ] **Step 1: Move isolated snippets behind the tutorials**
+- [x] **Step 1: Move isolated snippets behind the tutorials**
 
 Keep compact reference sections for Reader/Writer APIs, LPK v1/v2, lint profiles, signatures, rsync, workflow observers, Testflight, and APK trigger. Remove explanations already covered in the tutorials.
 
-- [ ] **Step 2: Add a common-error table**
+- [x] **Step 2: Add a common-error table**
 
 Cover `INVALID_CONFIG`, `INCOMPATIBLE_BACKEND`, `UNAUTHENTICATED`, `PERMISSION_DENIED`, `REMOTE_UNAVAILABLE`, `COMMAND_FAILED`, and `INTEGRITY_MISMATCH`, with the first check a reader should perform.
 
-- [ ] **Step 3: Check every public identifier**
+- [x] **Step 3: Check every public identifier**
 
 Run targeted `rg` searches for all symbols used in README examples. Expected: each symbol resolves in a non-README Go source file.
 
-- [ ] **Step 4: Run prose and formatting gates**
+- [x] **Step 4: Run prose and formatting gates**
 
 ```bash
 bash /home/czyt/.cc-switch/skills/write/scripts/check-punctuation.sh --lang zh README.zh-CN.md
@@ -456,7 +456,7 @@ git diff --check
 
 Expected: both punctuation commands print `punctuation: ok`; `git diff --check` exits zero.
 
-- [ ] **Step 5: Run repository verification**
+- [x] **Step 5: Run repository verification**
 
 ```bash
 go test ./... -count=1
@@ -464,7 +464,7 @@ go test ./... -count=1
 
 Expected: all packages pass.
 
-- [ ] **Step 6: Mark this plan complete and commit**
+- [x] **Step 6: Mark this plan complete and commit**
 
 Change completed checkboxes to `[x]`, then run:
 
