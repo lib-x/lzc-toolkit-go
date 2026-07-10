@@ -125,6 +125,9 @@ func writeZIP(ctx context.Context, dst io.Writer, source fs.FS, entries []writeE
 		}
 		writer, err := zw.CreateHeader(header)
 		if err != nil {
+			if contextErr := contextError(ctx, "archive.write_zip"); contextErr != nil {
+				return contextErr
+			}
 			return archiveError(lpkgo.CodeCommandFailed, "archive.write_zip", err)
 		}
 		if entry.info.IsDir() {
@@ -173,6 +176,9 @@ func writeTAR(ctx context.Context, dst io.Writer, source fs.FS, entries []writeE
 			header.Name += "/"
 		}
 		if err := tw.WriteHeader(header); err != nil {
+			if contextErr := contextError(ctx, "archive.write_tar"); contextErr != nil {
+				return contextErr
+			}
 			return archiveError(lpkgo.CodeCommandFailed, "archive.write_tar", err)
 		}
 		if entry.info.IsDir() {

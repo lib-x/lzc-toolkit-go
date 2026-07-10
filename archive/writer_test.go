@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -48,10 +49,55 @@ type cancelOnZIPFinalizationWriter struct {
 	cancelled bool
 }
 
+type cancelOnZIPHeaderWriter struct {
+	bytes.Buffer
+	cancel    context.CancelFunc
+	cancelled bool
+}
+
+func (w *cancelOnZIPHeaderWriter) Write(buffer []byte) (int, error) {
+	n, err := w.Buffer.Write(buffer)
+	if !w.cancelled && bytes.Contains(buffer, []byte{'P', 'K', 3, 4}) {
+		w.cancelled = true
+		w.cancel()
+	}
+	return n, err
+}
+
 type cancelOnTARTrailerWriter struct {
 	bytes.Buffer
 	cancel    context.CancelFunc
 	cancelled bool
+}
+
+type cancelOnTARHeaderWriter struct {
+	bytes.Buffer
+	cancel    context.CancelFunc
+	cancelled bool
+}
+
+type failHeaderWriter struct {
+	bytes.Buffer
+	format lpkarchive.Format
+	err    error
+}
+
+func (w *failHeaderWriter) Write(buffer []byte) (int, error) {
+	isZIPHeader := w.format == lpkarchive.FormatZIP && bytes.Contains(buffer, []byte{'P', 'K', 3, 4})
+	isTARHeader := w.format == lpkarchive.FormatTAR && len(buffer) == 512 && !allZero(buffer)
+	if isZIPHeader || isTARHeader {
+		return 0, w.err
+	}
+	return w.Buffer.Write(buffer)
+}
+
+func (w *cancelOnTARHeaderWriter) Write(buffer []byte) (int, error) {
+	n, err := w.Buffer.Write(buffer)
+	if !w.cancelled && len(buffer) == 512 && !allZero(buffer) {
+		w.cancelled = true
+		w.cancel()
+	}
+	return n, err
 }
 
 func (w *cancelOnTARTrailerWriter) Write(buffer []byte) (int, error) {
@@ -236,6 +282,20 @@ func TestWriteZIPDetectsCancellationDuringFinalization(t *testing.T) {
 	}
 }
 
+func TestWriteZIPPreservesCancellationDuringHeader(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	dst := &cancelOnZIPHeaderWriter{cancel: cancel}
+	source := fstest.MapFS{strings.Repeat("x", 5000): &fstest.MapFile{}}
+
+	_, err := lpkarchive.Write(ctx, dst, source, lpkarchive.WriteOptions{Format: lpkarchive.FormatZIP, Reproducible: true})
+	if !errors.Is(err, context.Canceled) || !errors.Is(err, lpkgo.ErrCancelled) {
+		t.Fatalf("error = %v, header cancellation = %v", err, dst.cancelled)
+	}
+	if got := err.Error(); got != "CANCELLED" {
+		t.Fatalf("error text = %q", got)
+	}
+}
+
 func TestWriteTARDetectsCancellationDuringFinalization(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	dst := &cancelOnTARTrailerWriter{cancel: cancel}
@@ -247,6 +307,56 @@ func TestWriteTARDetectsCancellationDuringFinalization(t *testing.T) {
 	}
 	if got := err.Error(); got != "CANCELLED" {
 		t.Fatalf("error text = %q", got)
+	}
+}
+
+func TestWriteTARPreservesCancellationDuringHeader(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	dst := &cancelOnTARHeaderWriter{cancel: cancel}
+	source := fstest.MapFS{"empty.txt": &fstest.MapFile{}}
+
+	_, err := lpkarchive.Write(ctx, dst, source, lpkarchive.WriteOptions{Format: lpkarchive.FormatTAR, Reproducible: true})
+	if !errors.Is(err, context.Canceled) || !errors.Is(err, lpkgo.ErrCancelled) {
+		t.Fatalf("error = %v, header cancellation = %v", err, dst.cancelled)
+	}
+	if got := err.Error(); got != "CANCELLED" {
+		t.Fatalf("error text = %q", got)
+	}
+}
+
+func TestWriteHeaderFailureRemainsCommandFailed(t *testing.T) {
+	writeErr := errors.New("header write failed")
+	tests := []struct {
+		name   string
+		format lpkarchive.Format
+		source fstest.MapFS
+	}{
+		{
+			name:   "ZIP",
+			format: lpkarchive.FormatZIP,
+			source: fstest.MapFS{strings.Repeat("x", 5000): &fstest.MapFile{}},
+		},
+		{
+			name:   "TAR",
+			format: lpkarchive.FormatTAR,
+			source: fstest.MapFS{"empty.txt": &fstest.MapFile{}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dst := &failHeaderWriter{format: test.format, err: writeErr}
+			_, err := lpkarchive.Write(context.Background(), dst, test.source, lpkarchive.WriteOptions{Format: test.format, Reproducible: true})
+			if !errors.Is(err, writeErr) || !errors.Is(err, lpkgo.ErrCommandFailed) {
+				t.Fatalf("error = %v", err)
+			}
+			if errors.Is(err, lpkgo.ErrCancelled) {
+				t.Fatalf("error unexpectedly matches cancellation: %v", err)
+			}
+			if got := err.Error(); got != "COMMAND_FAILED" {
+				t.Fatalf("error text = %q", got)
+			}
+		})
 	}
 }
 

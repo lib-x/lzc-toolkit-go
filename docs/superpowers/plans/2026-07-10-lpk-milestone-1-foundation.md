@@ -767,7 +767,10 @@ Context cancellation must stop copying and return context.Canceled. All ZIP
 and TAR output, including ZIP central-directory and TAR trailer finalization
 performed by Close, must pass through a writer that checks context before and
 after every underlying Write. Recheck context after archive Close before
-returning success.
+returning success. If ZIP CreateHeader or TAR WriteHeader returns after
+context cancellation, preserve CodeCancelled before applying any generic
+CodeCommandFailed wrapper; non-cancellation header failures remain
+CodeCommandFailed.
 
 - [ ] **Step 7: Verify and commit Task 3**
 
