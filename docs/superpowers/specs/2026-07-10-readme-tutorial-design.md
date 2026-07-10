@@ -121,7 +121,9 @@ README 使用一张小型文本流程图表达三条链路：
 - 账号密码换 token 和直接 token 两种认证方式。
 - 本地已登录 lzc-cli 时，环境变量和配置文件的读取位置。
 - CI Secret 到 `LZC_CLI_TOKEN` 的数据流。
-- `CopyImage` 返回 LazyCat Registry 镜像地址。
+- 一个可以单独运行的 `CopyImage` 完整例子，包含超时、分层进度回调和 LazyCat Registry 返回地址。
+- 明确镜像复制只需要网络和开发者平台 token，本机不需要安装 Docker，也不需要连接懒猫设备、ShellAPI 或 SSH。
+- 说明当前 lzc-cli 2.0.8 和 Go SDK 的镜像复制请求没有源 Registry 用户名或密码字段。需要认证的私有源不能通过该接口额外传入凭据，调用方必须确认开发者平台能够拉取源镜像。
 - `Publish` 从 `io.Reader` 上传 LPK，并执行官方 lint。
 - 说明镜像复制由开发者平台服务端完成，不调用本地或设备 Docker。
 - 不在示例、日志或错误中打印 token 和密码。
