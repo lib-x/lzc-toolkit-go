@@ -1,5 +1,7 @@
 # lzc-toolkit-go
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 Go SDK for LazyCat LPK lifecycle primitives, based on `@lazycatcloud/lzc-cli`
 `2.0.8`.
 
@@ -19,6 +21,12 @@ Reference CLI:
 
 The goal is semantic compatibility with lzc-cli formats and service-facing
 contracts. Byte-identical archive output is not required.
+
+## Installation
+
+```bash
+go get github.com/lib-x/lzc-toolkit-go
+```
 
 ## Examples
 
@@ -93,8 +101,8 @@ non-image project collection behavior of lzc-cli 2.0.8, including development
 config inheritance, manifest preprocessing, `contentdir`, `icon`, automatic
 `lzc-deploy-params.yml`, browser extensions, AI pod services,
 `compose_override`, package overrides, and resource exports. Image-bearing
-projects currently return `INCOMPATIBLE_BACKEND` until the separate OCI/image
-stage is configured in Milestone 2.
+projects require an explicit local or remote `ImageBuilder`; without one,
+`build.Build` returns `INCOMPATIBLE_BACKEND`.
 
 Validate an extracted lzc-cli image layout without importing Docker support:
 
@@ -154,7 +162,7 @@ password is sent only in the form request and is never stored. Authentication
 matches lzc-cli 2.0.8: login returns `data.token`, validation uses
 `X-User-Token`, and App Store calls use both `X-User-Token` and the
 `userToken` cookie. `CopyImage` starts a server-side copy at the LazyCat
-developer platform and polls its progress—it does not use local Docker or a
+developer platform and polls its progress; it does not use local Docker or a
 remote LazyCat device Docker daemon. Its result also includes the submitted
 source image, selected platform, LazyCat registry image, and final layer
 progress so CI/CD callers do not need to parse logs or rely on callbacks.
