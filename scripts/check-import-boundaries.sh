@@ -20,7 +20,7 @@ packages=(
 	./remote
 )
 
-forbidden='(google\.golang\.org/grpc|golang\.org/x/crypto/ssh|github\.com/docker|github\.com/lib-x/lpk-go/(appstore|remote/(ssh|shellapi)|project|lifecycle|image/dockerlocal))'
+forbidden='(google\.golang\.org/grpc|golang\.org/x/crypto/ssh|github\.com/docker|github\.com/lib-x/lpk-go/(appstore|remote/(ssh|shellapi)|project|lifecycle|image/(dockerlocal|buildpack)))'
 
 deps="$(go list -deps "${packages[@]}")"
 matches="$(printf '%s\n' "$deps" | grep -E "$forbidden" || true)"
