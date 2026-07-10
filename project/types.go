@@ -11,16 +11,64 @@ import (
 )
 
 const (
-	defaultPollInterval = time.Second
-	defaultStartTimeout = 90 * time.Second
-	defaultStopTimeout  = 30 * time.Second
+	defaultPollInterval    = time.Second
+	defaultStartTimeout    = 90 * time.Second
+	defaultStopTimeout     = 30 * time.Second
+	defaultMaxCaptureBytes = int64(4 << 20)
 )
 
 type Options struct {
-	Backend      remote.LifecycleBackend
-	PollInterval time.Duration
-	StartTimeout time.Duration
-	StopTimeout  time.Duration
+	Backend         remote.LifecycleBackend
+	PollInterval    time.Duration
+	StartTimeout    time.Duration
+	StopTimeout     time.Duration
+	MaxCaptureBytes int64
+}
+
+type DockerRequest = remote.StreamRequest
+
+type ComposeProject struct {
+	Name        string `json:"Name"`
+	Status      string `json:"Status"`
+	ConfigFiles string `json:"ConfigFiles"`
+}
+
+type ExecRequest struct {
+	AppID   string
+	Service string
+	Workdir *string
+	Command []string
+	Stdin   io.Reader
+	Stdout  io.Writer
+	Stderr  io.Writer
+	TTY     *bool
+}
+
+type LogRequest struct {
+	AppID   string
+	Service string
+	Follow  *bool
+	Tail    *int
+	Since   string
+	Stdout  io.Writer
+	Stderr  io.Writer
+	TTY     *bool
+}
+
+type CopyRequest struct {
+	AppID       string
+	Service     string
+	SourcePath  string
+	Destination string
+	Stdout      io.Writer
+	Stderr      io.Writer
+}
+
+type CopyResult struct {
+	ContainerID string
+	SourcePath  string
+	Destination string
+	Command     remote.Result
 }
 
 type Info struct {

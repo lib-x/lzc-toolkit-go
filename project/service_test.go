@@ -13,17 +13,23 @@ import (
 )
 
 type fakeBackend struct {
-	backendInfo remote.BackendInfo
-	appInfo     remote.AppInfo
-	appInfos    []remote.AppInfo
-	devshell    []bool
-	pauseInfo   *remote.AppInfo
-	resumeInfo  *remote.AppInfo
-	calls       []string
-	installed   io.Reader
-	syncRequest remote.SyncDevIDRequest
-	uninstallID string
-	deleteData  bool
+	backendInfo        remote.BackendInfo
+	appInfo            remote.AppInfo
+	appInfos           []remote.AppInfo
+	devshell           []bool
+	pauseInfo          *remote.AppInfo
+	resumeInfo         *remote.AppInfo
+	calls              []string
+	installed          io.Reader
+	syncRequest        remote.SyncDevIDRequest
+	uninstallID        string
+	deleteData         bool
+	dockerRequests     []remote.StreamRequest
+	composeRequests    []remote.StreamRequest
+	dockerResults      []remote.Result
+	composeResults     []remote.Result
+	captureDockerStdin bool
+	dockerStdin        [][]byte
 }
 
 func (backend *fakeBackend) Info(context.Context) (remote.BackendInfo, error) {
@@ -179,12 +185,24 @@ func (backend *fakeBackend) Uninstall(_ context.Context, appID string, deleteDat
 	return nil
 }
 
-func (backend *fakeBackend) Docker(context.Context, remote.StreamRequest) (remote.Result, error) {
-	return remote.Result{}, nil
+func (backend *fakeBackend) Docker(_ context.Context, request remote.StreamRequest) (remote.Result, error) {
+	backend.calls = append(backend.calls, "docker")
+	if backend.captureDockerStdin && request.Stdin != nil {
+		data, _ := io.ReadAll(request.Stdin)
+		backend.dockerStdin = append(backend.dockerStdin, data)
+	}
+	backend.dockerRequests = append(backend.dockerRequests, copyStreamRequest(request))
+	result := shiftResult(&backend.dockerResults)
+	writeStreamResult(request, result)
+	return result, nil
 }
 
-func (backend *fakeBackend) DockerCompose(context.Context, remote.StreamRequest) (remote.Result, error) {
-	return remote.Result{}, nil
+func (backend *fakeBackend) DockerCompose(_ context.Context, request remote.StreamRequest) (remote.Result, error) {
+	backend.calls = append(backend.calls, "compose")
+	backend.composeRequests = append(backend.composeRequests, copyStreamRequest(request))
+	result := shiftResult(&backend.composeResults)
+	writeStreamResult(request, result)
+	return result, nil
 }
 
 func (backend *fakeBackend) HostReadFile(context.Context, string, io.Writer) error { return nil }
@@ -315,4 +333,27 @@ func equalStrings(left, right []string) bool {
 		}
 	}
 	return true
+}
+
+func copyStreamRequest(request remote.StreamRequest) remote.StreamRequest {
+	request.Args = append([]string(nil), request.Args...)
+	return request
+}
+
+func shiftResult(results *[]remote.Result) remote.Result {
+	if len(*results) == 0 {
+		return remote.Result{}
+	}
+	result := (*results)[0]
+	*results = (*results)[1:]
+	return result
+}
+
+func writeStreamResult(request remote.StreamRequest, result remote.Result) {
+	if request.Stdout != nil {
+		_, _ = request.Stdout.Write(result.Stdout)
+	}
+	if request.Stderr != nil {
+		_, _ = request.Stderr.Write(result.Stderr)
+	}
 }

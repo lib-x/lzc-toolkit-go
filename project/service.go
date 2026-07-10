@@ -11,14 +11,15 @@ import (
 )
 
 type Service struct {
-	backend      remote.LifecycleBackend
-	pollInterval time.Duration
-	startTimeout time.Duration
-	stopTimeout  time.Duration
+	backend         remote.LifecycleBackend
+	pollInterval    time.Duration
+	startTimeout    time.Duration
+	stopTimeout     time.Duration
+	maxCaptureBytes int64
 }
 
 func New(options Options) (*Service, error) {
-	if options.Backend == nil || options.PollInterval < 0 || options.StartTimeout < 0 || options.StopTimeout < 0 {
+	if options.Backend == nil || options.PollInterval < 0 || options.StartTimeout < 0 || options.StopTimeout < 0 || options.MaxCaptureBytes < 0 {
 		return nil, projectError(lpkgo.CodeInvalidArgument, "project.new", errors.New("invalid project service options"))
 	}
 	pollInterval := options.PollInterval
@@ -33,7 +34,11 @@ func New(options Options) (*Service, error) {
 	if stopTimeout == 0 {
 		stopTimeout = defaultStopTimeout
 	}
-	return &Service{backend: options.Backend, pollInterval: pollInterval, startTimeout: startTimeout, stopTimeout: stopTimeout}, nil
+	maxCaptureBytes := options.MaxCaptureBytes
+	if maxCaptureBytes == 0 {
+		maxCaptureBytes = defaultMaxCaptureBytes
+	}
+	return &Service{backend: options.Backend, pollInterval: pollInterval, startTimeout: startTimeout, stopTimeout: stopTimeout, maxCaptureBytes: maxCaptureBytes}, nil
 }
 
 func (service *Service) Info(ctx context.Context, request InfoRequest) (Info, error) {
@@ -64,14 +69,21 @@ func (service *Service) Info(ctx context.Context, request InfoRequest) (Info, er
 }
 
 func (service *Service) validate(ctx context.Context, op, appID string) error {
+	if err := service.validateService(ctx, op); err != nil {
+		return err
+	}
+	if !validIdentifier(strings.TrimSpace(appID)) {
+		return projectError(lpkgo.CodeInvalidArgument, op, errors.New("invalid app ID"))
+	}
+	return nil
+}
+
+func (service *Service) validateService(ctx context.Context, op string) error {
 	if ctx == nil || service == nil || service.backend == nil {
 		return projectError(lpkgo.CodeInvalidArgument, op, errors.New("nil context, service, or backend"))
 	}
 	if err := ctx.Err(); err != nil {
 		return projectError(lpkgo.CodeCancelled, op, err)
-	}
-	if !validIdentifier(strings.TrimSpace(appID)) {
-		return projectError(lpkgo.CodeInvalidArgument, op, errors.New("invalid app ID"))
 	}
 	return nil
 }
