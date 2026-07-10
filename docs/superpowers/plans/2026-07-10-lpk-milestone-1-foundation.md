@@ -1180,7 +1180,8 @@ Commit:
 
 - Produces lpk.LayoutV1, LayoutV2, Write, WriteFile.
 - Produces lpk.Open, OpenReaderAt, OpenFile, Reader, Reader.Close.
-- Reader wraps archive.Reader and provides package-aware entry access.
+- Reader wraps archive.Reader and provides package-aware entry access,
+  including a single-entry lookup method.
 
 - [ ] **Step 1: Write failing Writer API tests**
 
@@ -1252,6 +1253,7 @@ Expose:
     func (r *Reader) Layout() Layout
     func (r *Reader) Format() archive.Format
     func (r *Reader) Entries(context.Context) ([]archive.Entry, error)
+    func (r *Reader) Entry(context.Context, string) (archive.Entry, error)
     func (r *Reader) OpenEntry(context.Context, string) (io.ReadCloser, error)
     func (r *Reader) Extract(context.Context, string) error
     func (r *Reader) Manifest(context.Context) (*manifest.Document, error)
@@ -1260,7 +1262,12 @@ Expose:
     func (r *Reader) Close() error
 
 Resource-only readers return fs.ErrNotExist from Manifest and still return
-PackageInfo.
+PackageInfo. EffectiveManifest for a resource-only package returns a zero-value
+typed Manifest plus the package metadata with HasPackageFile set; it does not
+require a synthetic manifest document. For v1, PackageInfo returns a newly
+split static package document derived from manifest.yml. Returned manifest and
+package Documents are defensive clones so caller mutation never changes the
+Reader cache.
 
 Re-export archive open options without importing adapters:
 
