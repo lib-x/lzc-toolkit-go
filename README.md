@@ -130,6 +130,30 @@ result, err := build.Build(ctx, dst, build.Request{
 not import or execute the Docker adapter. The local target defaults to
 `linux/amd64` and can be changed with `dockerlocal.WithPlatform`.
 
+Use a CI/CD token directly, through `LZC_CLI_TOKEN`, or from an explicit
+store:
+
+```go
+tokens := auth.Chain{
+    auth.EnvironmentToken{},
+    auth.StoreProvider{Store: tokenfile.Store{Path: tokenPath}},
+}
+client := appstore.New(appstore.Options{Token: tokens})
+result, err := client.CopyImage(ctx, appstore.CopyImageRequest{
+    Image:    "docker.io/example/app:1.0.0",
+    Platform: "amd64",
+})
+_ = result
+```
+
+Username/password login is also available through `auth.Client.Login`; the
+password is sent only in the form request and is never stored. Authentication
+matches lzc-cli 2.0.8: login returns `data.token`, validation uses
+`X-User-Token`, and App Store calls use both `X-User-Token` and the
+`userToken` cookie. `CopyImage` starts a server-side copy at the LazyCat
+developer platform and polls its progress—it does not use local Docker or a
+remote LazyCat device Docker daemon.
+
 Lint an extracted package root:
 
 ```go

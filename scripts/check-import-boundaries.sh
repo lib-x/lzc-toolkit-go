@@ -15,6 +15,8 @@ packages=(
 	./oci
 	./image
 	./image/dockerarchive
+	./auth
+	./auth/tokenfile
 )
 
 forbidden='(google\.golang\.org/grpc|golang\.org/x/crypto/ssh|github\.com/docker|github\.com/lib-x/lpk-go/(appstore|remote|project|lifecycle|image/dockerlocal))'
