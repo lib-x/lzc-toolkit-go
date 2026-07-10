@@ -146,6 +146,31 @@ func TestWriteV2StrictRejectsStaticManifestFields(t *testing.T) {
 	}
 }
 
+func TestWriteManifestTemplateRequiresExplicitCompatibilityOption(t *testing.T) {
+	root := fstest.MapFS{
+		"package.yml":  &fstest.MapFile{Data: []byte("package: cloud.lazycat.apps.demo\nversion: 1.0.0\n")},
+		"manifest.yml": &fstest.MapFile{Data: []byte("application:\n  subdomain: demo\n{{if .U.enabled}}\n  background_task: true\n{{end}}\n")},
+	}
+	var rejected bytes.Buffer
+	_, err := lpk.Write(context.Background(), &rejected, lpk.WriteRequest{Layout: lpk.LayoutV2, Files: root})
+	if !errors.Is(err, lpkgo.ErrInvalidManifest) || rejected.Len() != 0 {
+		t.Fatalf("error=%v bytes=%d", err, rejected.Len())
+	}
+
+	var accepted bytes.Buffer
+	_, err = lpk.Write(context.Background(), &accepted, lpk.WriteRequest{
+		Layout:                lpk.LayoutV2,
+		Files:                 root,
+		AllowManifestTemplate: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accepted.Len() == 0 {
+		t.Fatal("empty output")
+	}
+}
+
 func TestWriteFileIsAtomicAndReportsFinalFile(t *testing.T) {
 	destination := filepath.Join(t.TempDir(), "nested", "demo.lpk")
 

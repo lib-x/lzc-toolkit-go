@@ -1,6 +1,7 @@
 package lpk
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -26,6 +27,9 @@ func validateWriteRequest(ctx context.Context, request WriteRequest) error {
 			return err
 		}
 		if _, err := manifest.Parse(data); err != nil {
+			if request.AllowManifestTemplate && isManifestTemplate(data) {
+				return nil
+			}
 			return err
 		}
 		return nil
@@ -50,6 +54,9 @@ func validateWriteRequest(ctx context.Context, request WriteRequest) error {
 		}
 		manifestDocument, err := manifest.Parse(manifestData)
 		if err != nil {
+			if request.AllowManifestTemplate && isManifestTemplate(manifestData) {
+				return nil
+			}
 			return err
 		}
 		if request.Strict {
@@ -67,6 +74,10 @@ func validateWriteRequest(ctx context.Context, request WriteRequest) error {
 		}
 	}
 	return nil
+}
+
+func isManifestTemplate(data []byte) bool {
+	return bytes.Contains(data, []byte("{{")) && bytes.Contains(data, []byte("}}"))
 }
 
 func contextError(ctx context.Context, op string) error {

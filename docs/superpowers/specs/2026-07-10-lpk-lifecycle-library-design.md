@@ -440,10 +440,12 @@ official submission warnings do not necessarily mean an LPK is uninstallable.
 Release builds use lzc-build.yml by default. Development project operations
 prefer lzc-build.dev.yml when present.
 
-When the selected build configuration is not lzc-build.base.yml, the library
-looks for lzc-build.base.yml in the same directory. Base and selected
-configuration maps use top-level replacement semantics, with the selected
-configuration taking precedence.
+Matching lzc-cli 2.0.8, selecting lzc-build.dev.yml makes lzc-build.yml in the
+same directory its parent when that file exists. Parent and development
+configuration maps use top-level replacement semantics, with the development
+configuration taking precedence. Other filenames have no implicit parent;
+in particular, lzc-build.base.yml is not a recognized inheritance layer in the
+reference release.
 
 ### 11.2 Build configuration support
 
@@ -479,15 +481,18 @@ environment inheritance is enabled.
 
 ### 11.4 Build scripts
 
-Build scripts run through an injected CommandRunner. The default runner uses
-context-aware subprocess execution and preserves the reference shell
+Build scripts run through an injected CommandRunner. The included ShellRunner
+uses context-aware subprocess execution and preserves the reference shell
 semantics:
 
 - sh -c on Unix-like systems;
 - cmd /c on Windows.
 
-The caller can replace the runner to sandbox commands, collect output, or
-disable command execution.
+The caller can replace the runner to sandbox commands or collect output.
+Because this project is a library and project configuration is an untrusted
+code boundary, Build executes buildscript only when Request.RunBuildScript is
+explicitly enabled. This is a deliberate library safety control around the
+same shell behavior exposed by the reference CLI.
 
 ### 11.5 Project templates
 

@@ -76,6 +76,26 @@ info, err := inspect.File(ctx, "app.lpk")
 _, _ = result, info
 ```
 
+Build a project directly to a writer. Project scripts are disabled unless the
+request explicitly enables them:
+
+```go
+var output bytes.Buffer
+result, err := build.Build(ctx, &output, build.Request{
+    Root:       "./my-lzcapp",
+    ConfigFile: "lzc-build.yml",
+})
+_ = result
+```
+
+`build.BuildFile` uses atomic replacement. The build package supports the
+non-image project collection behavior of lzc-cli 2.0.8, including development
+config inheritance, manifest preprocessing, `contentdir`, `icon`, automatic
+`lzc-deploy-params.yml`, browser extensions, AI pod services,
+`compose_override`, package overrides, and resource exports. Image-bearing
+projects currently return `INCOMPATIBLE_BACKEND` until the separate OCI/image
+stage is configured in Milestone 2.
+
 Lint an extracted package root:
 
 ```go

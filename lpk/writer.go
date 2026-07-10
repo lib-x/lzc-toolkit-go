@@ -13,6 +13,9 @@ type WriteRequest struct {
 	Layout Layout
 	Files  fs.FS
 	Strict bool
+	// AllowManifestTemplate permits the unrendered Go-template manifests
+	// accepted and preserved by lzc-cli. It does not render the template.
+	AllowManifestTemplate bool
 }
 
 // WriteResult reports the encoded LPK container metadata.
