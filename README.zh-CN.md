@@ -126,6 +126,21 @@ result, err := build.Build(ctx, dst, build.Request{
 
 可以直接提供 CI/CD token，也可以从 `LZC_CLI_TOKEN` 或显式 token 存储中读取：
 
+开发者平台认证支持两种凭据来源：
+
+1. 账号和密码：`auth.Client.Login` 把账号密码发送给 LazyCat 账号服务，并返回 `Session.Token`。密码不会保存；如果配置了 `TokenStore`，只保存服务端返回的 token。
+2. 已有 token：通过 `auth.StaticToken`、环境变量 `LZC_CLI_TOKEN` 或显式 `TokenStore` 提供。CI/CD 推荐使用这种方式。
+
+开发者账号注册和权限申请地址是 <https://developer.lazycat.cloud/manage>。
+
+如果本机已经通过 lzc-cli 登录，按 lzc-cli 2.0.8 的实际读取顺序获取 token：
+
+- 如果设置了 `LZC_CLI_TOKEN`，使用该环境变量，它的优先级最高。
+- 否则，lzc-cli 把 token 保存在 `~/.config/lazycat/box-config.json` 的 `token` 字段中。
+- `lzc-cli config get token` 可以打印当前生效的 token。不要在 CI 日志中执行该命令；应把取出的值保存到 CI Secret，再以 `LZC_CLI_TOKEN` 注入。
+
+Go SDK 不会隐式读取用户目录中的 lzc-cli 配置文件。需要复用本地登录状态时，把展开后的文件路径显式传给 `tokenfile.Store{Path: tokenPath}` 即可，两者使用兼容的 JSON 格式。
+
 ```go
 tokens := auth.Chain{
     auth.EnvironmentToken{},
@@ -142,7 +157,7 @@ if err != nil {
 fmt.Println(result.LazyCatImage) // registry.lazycat.cloud/...
 ```
 
-`auth.Client.Login` 支持用用户名和密码登录。密码只会出现在登录表单请求中，不会保存。认证行为与 lzc-cli 2.0.8 一致：登录响应返回 `data.token`，token 校验使用 `X-User-Token`，App Store 请求同时使用 `X-User-Token` 和 `userToken` Cookie。
+请求协议与 lzc-cli 2.0.8 一致：登录响应返回 `data.token`，token 校验使用 `X-User-Token`，App Store 请求同时使用 `X-User-Token` 和 `userToken` Cookie。
 
 `CopyImage` 请求 LazyCat 开发者平台在服务端复制镜像，并轮询复制进度。它不会调用本地 Docker，也不会调用微服设备上的 Docker。返回值包含源镜像、目标平台、LazyCat Registry 镜像地址和最终分层进度，CI/CD 不需要解析日志。
 

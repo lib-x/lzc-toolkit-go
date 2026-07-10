@@ -141,6 +141,32 @@ not import or execute the Docker adapter. The local target defaults to
 Use a CI/CD token directly, through `LZC_CLI_TOKEN`, or from an explicit
 store:
 
+Developer-platform authentication supports two credential flows:
+
+1. Username and password: `auth.Client.Login` sends them to the LazyCat
+   account service and returns `Session.Token`. The password is not stored. If
+   a `TokenStore` is configured, only the returned token is saved.
+2. Existing token: provide it through `auth.StaticToken`, the
+   `LZC_CLI_TOKEN` environment variable, or an explicit `TokenStore`. This is
+   the recommended flow for CI/CD.
+
+Developer account registration and permission requests are handled at
+<https://developer.lazycat.cloud/manage>.
+
+If lzc-cli is already logged in on the local machine, resolve the token the
+same way as lzc-cli 2.0.8:
+
+- `LZC_CLI_TOKEN` takes precedence when it is set.
+- Otherwise, lzc-cli stores the token in the `token` field of
+  `~/.config/lazycat/box-config.json`.
+- `lzc-cli config get token` prints the effective token. Do not run it in a CI
+  log; copy the value into the CI secret store and expose it as
+  `LZC_CLI_TOKEN`.
+
+The Go SDK does not silently read a user-level lzc-cli configuration file.
+To reuse it, pass the expanded file path explicitly as
+`tokenfile.Store{Path: tokenPath}`. The JSON format is compatible.
+
 ```go
 tokens := auth.Chain{
     auth.EnvironmentToken{},
@@ -157,9 +183,8 @@ if err != nil {
 fmt.Println(result.LazyCatImage) // registry.lazycat.cloud/...
 ```
 
-Username/password login is also available through `auth.Client.Login`; the
-password is sent only in the form request and is never stored. Authentication
-matches lzc-cli 2.0.8: login returns `data.token`, validation uses
+The request protocol matches lzc-cli 2.0.8: login returns `data.token`,
+validation uses
 `X-User-Token`, and App Store calls use both `X-User-Token` and the
 `userToken` cookie. `CopyImage` starts a server-side copy at the LazyCat
 developer platform and polls its progress; it does not use local Docker or a
