@@ -34,10 +34,10 @@
 - Produces `remote.LifecycleBackend`, `remote.AppInfo`, `remote.DeployInfo`, `remote.SyncDevIDRequest`, `remote.DockerRequest`, and `remote.StreamRequest`.
 - `debugbridge.Client` adds `Install`, `Status`, `AppInfo`, `SyncDevID`, `IsDevshell`, `Pause`, `Resume`, `Uninstall`, `Docker`, `DockerCompose`, and `HostReadFile`.
 
-- [ ] Write fake-runner tests asserting exact argv and `--uid` placement for every command, streamed LPK stdin, `--pkgId`, `--delete-data`, `--dev-id`, `--userapp`, TTY propagation, JSON response parsing, and stable errors.
-- [ ] Implement client UID configuration through `debugbridge.WithUID`; reject UID-required calls when it is empty.
-- [ ] Validate app IDs, deploy/status JSON, Docker argv, and host paths at the boundary; never include remote stdout/stderr in error strings.
-- [ ] Run `go test ./remote/debugbridge -count=1`, race, vet, and commit as `feat: add DebugBridge lifecycle protocol`.
+- [x] Write fake-runner tests asserting exact argv and `--uid` placement for every command, streamed LPK stdin, `--pkgId`, `--delete-data`, `--dev-id`, `--userapp`, TTY propagation, JSON response parsing, and stable errors.
+- [x] Implement client UID configuration through `debugbridge.WithUID`; reject UID-required calls when it is empty.
+- [x] Validate app IDs, deploy/status JSON, Docker argv, and host paths at the boundary; never include remote stdout/stderr in error strings.
+- [x] Run `go test ./remote/debugbridge -count=1`, race, vet, and commit as `feat: add DebugBridge lifecycle protocol`.
 
 ### Task 2: Project lifecycle service
 
@@ -52,10 +52,10 @@
 - Produces `project.Service`, `project.Options`, `project.DeployRequest`, `project.DeployResult`, `project.Info`, `project.Start`, `project.Stop`, `project.Uninstall`, and `project.Wait`.
 - `Deploy` accepts an LPK `io.Reader`, explicit package ID, optional dev ID, and user-app flag; it installs, conditionally waits for readiness based on `CapabilityPendingSyncDevID`, and synchronizes the dev ID.
 
-- [ ] Test install/deploy ordering, pending sync capability behavior, terminal startup failures, context cancellation, pause/resume state transitions, uninstall with and without data deletion, and typed results.
-- [ ] Implement polling using configurable interval/timeout and actual status predicates rather than fixed sleeps.
-- [ ] Keep project package dependent only on `remote` contracts, not SSH, gRPC, rsync, or App Store packages.
-- [ ] Run package tests/race/vet and commit as `feat: add project lifecycle service`.
+- [x] Test install/deploy ordering, pending sync capability behavior, terminal startup failures, context cancellation, pause/resume state transitions, uninstall with and without data deletion, and typed results.
+- [x] Implement polling using configurable interval/timeout and actual status predicates rather than fixed sleeps.
+- [x] Keep project package dependent only on `remote` contracts, not SSH, gRPC, rsync, or App Store packages.
+- [x] Run package tests/race/vet and commit as `feat: add project lifecycle service`.
 
 ### Task 3: Docker, Compose, exec, logs, and copy
 
@@ -71,9 +71,9 @@
 - Produces `project.ExecRequest`, `project.LogRequest`, `project.CopyRequest`, `Service.Exec`, `Service.Logs`, `Service.CopyTo`, `Service.Docker`, and `Service.Compose`.
 - Exec defaults to service `app`, workdir `/lzcapp/cache/project-mirror`, and command `/bin/sh`; copy uses Docker `cp -` TAR stdin exactly like lzc-cli.
 
-- [ ] Test exact Compose project naming, service lookup, running-state checks, workdir creation, TTY and passthrough argv, log follow/tail/since flags, TAR copy streaming, and caller stream ownership.
-- [ ] Reject empty service names, unsafe container/workdir paths, invalid tail values, and unbounded captured JSON.
-- [ ] Run project tests/race/vet and commit as `feat: add project remote command APIs`.
+- [x] Test exact Compose project naming, service lookup, running-state checks, workdir creation, TTY and passthrough argv, log follow/tail/since flags, TAR copy streaming, and caller stream ownership.
+- [x] Reject empty service names, unsafe container/workdir paths, invalid tail values, and unbounded captured JSON.
+- [x] Run project tests/race/vet and commit as `feat: add project remote command APIs`.
 
 ### Task 4: Rsync synchronization adapter
 
@@ -88,10 +88,10 @@
 - Produces `rsync.Options`, `rsync.Target`, `rsync.Executor`, `rsync.Sync`, `rsync.BuildArgs`, and `rsync.BuildTunnelArgs`.
 - Default target is `/lzcapp/cache/project-mirror`; password is the lzc-cli rsync daemon value and is passed only through the child environment.
 
-- [ ] Test IPv4/IPv6 destinations, user-app UID paths, `--delete`, `--dry-run`, source subdirectories, `.lzcdevignore`, exact SSH tunnel argv, rsync 3.2.0 version validation, and stable failure mapping.
-- [ ] Implement direct argv execution with injected executor; do not implement watch mode with a third-party watcher dependency. Expose repeated `Sync` calls so callers can attach their preferred watcher.
-- [ ] Validate the target stays under `/lzcapp/cache` and never expose the rsync password in errors or events.
-- [ ] Run package tests/race/vet and commit as `feat: add project rsync adapter`.
+- [x] Test IPv4/IPv6 destinations, user-app UID paths, `--delete`, `--dry-run`, source subdirectories, `.lzcdevignore`, exact SSH tunnel argv, rsync 3.2.0 version validation, and stable failure mapping.
+- [x] Implement direct argv execution with injected executor; do not implement watch mode with a third-party watcher dependency. Expose repeated `Sync` calls so callers can attach their preferred watcher.
+- [x] Validate the target stays under `/lzcapp/cache` and never expose the rsync password in errors or events.
+- [x] Run package tests/race/vet and commit as `feat: add project rsync adapter`.
 
 ### Task 5: High-level workflow composition and documentation
 
@@ -104,10 +104,10 @@
 **Interfaces:**
 - Adds build→install→sync→start composition through injected build/project services while preserving the existing dependency-light workflow API.
 
-- [ ] Add orchestration tests for success, build failure, install failure, cancellation, cleanup, and observer events.
-- [ ] Document direct ShellAPI and SSH setup, DebugBridge construction, remote build-pack injection, lifecycle calls, exec/log/copy/sync, and CI/CD authentication/publishing flow.
-- [ ] Enforce that `project` does not import transport adapters and base packages do not import project/gRPC/SSH/App Store packages.
-- [ ] Run all Go tests, race, vet, import checks, shell checks, lzc-cli interoperability, and lazycat-contrib validation; commit and push.
+- [x] Add orchestration tests for success, build failure, install failure, cancellation, cleanup, and observer events.
+- [x] Document direct ShellAPI and SSH setup, DebugBridge construction, remote build-pack injection, lifecycle calls, exec/log/copy/sync, and CI/CD authentication/publishing flow.
+- [x] Enforce that `project` does not import transport adapters and base packages do not import project/gRPC/SSH/App Store packages.
+- [x] Run all Go tests, race, vet, import checks, shell checks, lzc-cli interoperability, and lazycat-contrib validation; commit and push.
 
 ### Task 6: Final module/repository migration and release gate
 

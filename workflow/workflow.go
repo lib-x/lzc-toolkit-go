@@ -2,7 +2,10 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"time"
+
+	lpkgo "github.com/lib-x/lpk-go"
 )
 
 type Stage string
@@ -55,7 +58,13 @@ func NewPipeline[S any](observer Observer, steps ...Step[S]) *Pipeline[S] {
 }
 
 func (p *Pipeline[S]) Run(ctx context.Context, state S) error {
+	if ctx == nil || p == nil {
+		return &lpkgo.Error{Code: lpkgo.CodeInvalidArgument, Op: "workflow.run", Cause: errors.New("nil context or pipeline")}
+	}
 	for _, step := range p.steps {
+		if step == nil {
+			return &lpkgo.Error{Code: lpkgo.CodeInvalidArgument, Op: "workflow.run", Cause: errors.New("nil workflow step")}
+		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -70,7 +79,7 @@ func (p *Pipeline[S]) Run(ctx context.Context, state S) error {
 }
 
 func (p *Pipeline[S]) emit(ctx context.Context, event Event) {
-	if p.observer == nil {
+	if p == nil || p.observer == nil {
 		return
 	}
 	event.Time = p.now()

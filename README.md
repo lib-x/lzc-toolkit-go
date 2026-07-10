@@ -194,6 +194,166 @@ This matches lzc-cli 2.0.8's unauthenticated multipart endpoint and five-second
 default timeout. The typed result exposes the HTTP status and whether the
 request was accepted or returned `304 Not Modified`.
 
+## Authentication model
+
+Device lifecycle access and developer-platform publishing use different
+credentials, matching lzc-cli 2.0.8:
+
+- Local LazyCat client discovery uses the LightOS ShellAPI files
+  `shellapi_addr` and `shellapi_cred`. ShellAPI returns the default box, login
+  UID, and client ID; the credential is sent only as `lzc-shellapi-cred` gRPC
+  metadata.
+- Build-remote lifecycle operations use SSH access to the configured build
+  host plus the target LazyCat UID. The SDK never asks for or stores a device
+  account password. SSH key authorization remains the caller's responsibility.
+- Developer-platform operations (`Publish`, application creation, Testflight,
+  and image copy) use a platform token. `auth.Client.Login` can exchange a
+  username/password for `data.token`; when a store is configured, only the
+  token is persisted. CI should inject an existing token through
+  `LZC_CLI_TOKEN` or an explicit token store.
+- APK triggering is the same unauthenticated shell endpoint used by lzc-cli.
+
+This separation matters for CI/CD: a platform token is sufficient for App
+Store submission and registry-side image copy, while deployment to a real box
+also requires an independently authorized ShellAPI/SSH path.
+
+## ShellAPI discovery and build-remote transport
+
+ShellAPI discovery is optional and isolated in `remote/shellapi`:
+
+```go
+config, err := shellapi.LoadConfig(ctx, shellapi.ConfigOptions{})
+if err != nil {
+    return err
+}
+shell, err := shellapi.New(ctx, shellapi.Options{Config: config})
+if err != nil {
+    return err
+}
+defer shell.Close()
+
+box, err := shell.DefaultBox(ctx)
+clientID, err := shell.ClientID(ctx)
+_, _ = box, clientID // box.LoginUser is the LazyCat UID; clientID is dev.id
+```
+
+`remote/ssh` implements lzc-cli's build-remote transport. It calls the remote
+host's `lzc-docker`, which in turn executes
+`/lzcapp/pkg/content/debug.bridge` inside
+`cloudlazycatdevelopertools-app-1`. It does not use a local Docker daemon:
+
+```go
+target, err := ssh.ParseTarget("developer", "build-host.example:22")
+if err != nil {
+    return err
+}
+runner := ssh.New(ssh.Options{Target: target})
+bridge := debugbridge.New(
+    runner,
+    runner.BridgeCommand,
+    debugbridge.WithUID(box.LoginUser),
+    debugbridge.WithHostCommand(runner.HostCommand),
+)
+```
+
+All transport constructors accept injected executors or dial options for tests.
+The SDK does not prompt, alter terminal state, or install SSH keys.
+
+## Remote image build and project lifecycle
+
+Use the DebugBridge client as the remote image backend without importing SSH
+into the base `build` package:
+
+```go
+cache := blobcache.New(projectDir)
+remoteImages := buildpack.New(bridge, cache)
+var packageData bytes.Buffer
+built, err := build.Build(ctx, &packageData, build.Request{
+    Root:         projectDir,
+    ConfigFile:   "lzc-build.dev.yml",
+    ForceV2:      true,
+    ImageBuilder: remoteImages,
+})
+```
+
+The remote builder creates deterministic Docker contexts from Dockerfile
+`COPY`/`ADD` sources, honors `.dockerignore`, uses the backend blob cache, and
+materializes an OCI layout verified by `oci.Validate`.
+
+Create the dependency-light project service and deploy a caller-owned LPK
+reader:
+
+```go
+projects, err := project.New(project.Options{Backend: bridge})
+if err != nil {
+    return err
+}
+deployed, err := projects.Deploy(ctx, project.DeployRequest{
+    Package:   bytes.NewReader(packageData.Bytes()),
+    PackageID: built.Package,
+    DevID:     clientID,
+    UserApp:   false,
+})
+if err != nil {
+    return err
+}
+running, err := projects.Start(ctx, project.StartRequest{
+    AppID: built.Package, LocalVersion: built.Version,
+})
+_, _ = deployed, running
+```
+
+Backends before `1.0.4` wait for the app container before dev.id sync; newer
+backends use pending sync. `Start`, `Stop`, `Wait`, and `Uninstall` expose
+explicit state and deletion semantics.
+
+Project command APIs stream through caller-owned readers and writers:
+
+```go
+tty := false
+_, err = projects.Exec(ctx, project.ExecRequest{
+    AppID: built.Package, Service: "app",
+    Command: []string{"/bin/sh", "-lc", "go test ./..."},
+    Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, TTY: &tty,
+})
+_, err = projects.Logs(ctx, project.LogRequest{
+    AppID: built.Package, Stdout: os.Stdout, // follow defaults to true
+})
+_, err = projects.CopyTo(ctx, project.CopyRequest{
+    AppID: built.Package, SourcePath: "./config", Destination: "/opt/app/config",
+})
+```
+
+`Exec` defaults to service `app`, command `/bin/sh`, and workdir
+`/lzcapp/cache/project-mirror`. `CopyTo` streams a TAR directly to
+`lzc-docker cp -`; it does not create a temporary TAR file.
+
+Use the optional `project/rsync` package for one-shot source synchronization:
+
+```go
+syncResult, err := projectrsync.Sync(ctx, projectrsync.Options{
+    RootDir: projectDir,
+    Target: projectrsync.Target{
+        UID: box.LoginUser, Host: rsyncHost,
+        PackageID: built.Package, UserApp: false,
+        Directory: projectrsync.DefaultTarget,
+    },
+    Delete: true,
+    Stdout: os.Stdout,
+})
+```
+
+The adapter requires rsync `3.2.0+`, creates `.lzcdevignore` from lzc-cli's
+defaults and `.gitignore`, and passes the daemon password only in the child
+environment. `BuildTunnelArgs` produces the exact SSH local-forward argv for a
+build-remote rsync target. Watch mode is intentionally caller-owned: invoke
+`Sync` again from the filesystem watcher appropriate for your application.
+
+For complete build → deploy → sync → start orchestration, import the optional
+`workflow/project` package. It spools the LPK to a temporary file, returns
+typed results for every completed stage, cleans the artifact on success and
+failure, and emits safe `workflow.Event` values through an observer.
+
 Lint an extracted package root:
 
 ```go

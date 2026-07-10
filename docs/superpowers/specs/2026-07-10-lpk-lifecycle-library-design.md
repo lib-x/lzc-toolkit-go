@@ -144,17 +144,17 @@ The module uses the following public package structure:
     ├── lpkgo lightweight shared contracts
     ├── version
     ├── workflow
+    │   └── project
     ├── lpk
     ├── project
-    │   ├── template
-    │   └── sync
+    │   └── rsync
     ├── manifest
     │   └── migrate
     ├── build
     ├── image
-    │   ├── cache
-    │   ├── docker
-    │   └── remotebuild
+    │   ├── buildpack
+    │   ├── dockerarchive
+    │   └── dockerlocal
     ├── archive
     ├── inspect
     ├── lint
@@ -163,12 +163,10 @@ The module uses the following public package structure:
     │   └── tokenfile
     ├── appstore
     ├── remote
+    │   ├── blobcache
+    │   ├── debugbridge
     │   ├── shellapi
     │   └── ssh
-    └── lifecycle
-        ├── release
-        ├── publish
-        └── deploy
 
 Internal packages contain implementation details that are not stable public
 contracts, including archive helpers, YAML node merging, OCI fixture tools,
@@ -187,7 +185,7 @@ implementations.
 
 Dependencies are one-way:
 
-    lifecycle/* -> workflow, build, appstore, project, remote
+    workflow/project -> workflow, build, project, project/rsync
     build       -> manifest, lpk, image interfaces, lint
     inspect     -> lpk, manifest
     signature   -> lpk, archive
@@ -233,7 +231,7 @@ Store, gRPC, SSH, Docker, template, or synchronization code.
 
 Focused APIs are provided by:
 
-- project and project/template for project creation;
+- project for remote application and project lifecycle operations;
 - manifest and manifest/migrate for configuration documents;
 - build for project builds;
 - lpk for constructing, opening, and extracting LPK containers;
@@ -241,23 +239,19 @@ Focused APIs are provided by:
 - lint for package and store warnings;
 - signature for keys and signatures;
 - image for pure image and OCI contracts;
-- image/docker for a local Docker CLI adapter;
-- image/remotebuild for a remote build adapter;
+- image/dockerlocal and image/dockerarchive for local Docker adapters;
+- image/buildpack for the remote build adapter;
 - auth and auth/tokenfile for sessions and token persistence;
 - appstore for image copy, image listing, publishing, and APK generation;
 - remote for transport-neutral remote contracts;
-- remote/shellapi and remote/ssh for concrete remote transports;
-- project/sync for watch and rsync synchronization.
+- remote/debugbridge for the transport-neutral Developer Tools protocol;
+- remote/shellapi and remote/ssh for concrete discovery and build-remote transports;
+- project/rsync for one-shot rsync synchronization.
 
-Complete workflow facades are opt-in packages:
-
-    lifecycle/release
-    lifecycle/publish
-    lifecycle/deploy
-
-Each lifecycle constructor validates its own dependencies. For example,
-lifecycle/release accepts build, image, signing, and observer dependencies
-but does not require authentication or App Store dependencies.
+The complete build, deploy, sync, and start workflow is opt-in through
+`workflow/project`. Its constructor validates only builder, lifecycle, optional
+rsync, observer, and temporary-artifact dependencies. The base `workflow`
+package remains dependency-light.
 
 ## 7. Contract design rules
 
@@ -294,15 +288,12 @@ The workflow package provides a typed linear pipeline:
         // ordered steps and observer
     }
 
-    func NewPipeline[S any](steps ...Step[S]) *Pipeline[S]
+    func NewPipeline[S any](Observer, ...Step[S]) *Pipeline[S]
     func (p *Pipeline[S]) Run(context.Context, S) error
 
-Specific workflows define specific state types:
-
-- ReleaseState
-- PublishState
-- DeployState
-- InstallState
+Specific workflow facades keep their state private and return typed stage
+results. `workflow/project` exposes build, deploy, optional sync, and start
+results while cleaning its temporary LPK on success and failure.
 
 Different workflow states cannot be mixed. A caller can replace, insert, or
 skip a stage only when using the matching state type.
@@ -1017,13 +1008,10 @@ The remote service supports:
 - remote file reads;
 - project sync support.
 
-SSH key handling:
-
-- uses a managed Ed25519 key pair;
-- private keys are mode 0600;
-- key comments are sanitized;
-- remote command arguments use a tested shell escaping function;
-- multiplexing sockets are cleaned up.
+SSH authorization is explicit and caller-owned. The adapter executes the SSH
+binary with direct argv, never a shell command string, and never prompts or
+creates keys. Callers may inject an executor or use their existing SSH agent,
+config, and authorized keys.
 
 The ShellAPI protobuf contract is represented by generated Go code. Generated
 code is not hand-edited.
@@ -1035,22 +1023,21 @@ capabilities rather than implementing transports.
 
 It supports:
 
-- selecting development or release build configuration;
-- resolving the project working directory;
-- creating a force-v2 development package;
 - deploy and startup-state polling;
 - reporting deployment and container status;
 - starting or resuming a project;
 - executing commands in a selected service and work directory;
 - copying files using TAR streams;
 - streaming logs;
-- initial and watch-mode synchronization;
+- one-shot synchronization suitable for caller-owned watch loops;
 - ignore rules from .gitignore and .lzcdevignore;
 - rsync and SSH tunnel operation through injected runners;
 - ensuring the project is deployed and running before dependent actions.
 
-Watch synchronization batches changes and supports cancellation through the
-context. It does not leak goroutines after cancellation.
+The rsync adapter deliberately does not own a filesystem watcher. Repeated
+`Sync` calls are context-aware, so callers can attach the watcher and batching
+policy appropriate for their application without adding that dependency to
+the SDK.
 
 ## 20. Errors and warnings
 
@@ -1081,6 +1068,7 @@ Stable codes include:
 - REMOTE_UNAVAILABLE
 - INTEGRITY_MISMATCH
 - CANCELLED
+- DEADLINE_EXCEEDED
 
 The type supports errors.Is, errors.As, and Unwrap.
 
