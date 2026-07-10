@@ -32,10 +32,7 @@ func (e *Error) Error() string {
 	if e == nil {
 		return "<nil>"
 	}
-	if e.Op == "" {
-		return string(e.Code)
-	}
-	return e.Op + ": " + string(e.Code)
+	return string(e.Code)
 }
 
 func (e *Error) Unwrap() error {

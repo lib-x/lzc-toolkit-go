@@ -16,7 +16,7 @@ func TestErrorMatchesStableCode(t *testing.T) {
 	if !errors.Is(err, cause) {
 		t.Fatal("expected errors.Is to reach the wrapped cause")
 	}
-	if got := err.Error(); got != "archive.read: INTEGRITY_MISMATCH" {
+	if got := err.Error(); got != "INTEGRITY_MISMATCH" {
 		t.Fatalf("unexpected error string: %q", got)
 	}
 }
@@ -30,14 +30,22 @@ func TestErrorDoesNotExposeSensitiveDetails(t *testing.T) {
 		Cause: errors.New("private-key=cause-secret"),
 	}
 
-	if got := err.Error(); got != "auth.login: UNAUTHENTICATED" {
+	if got := err.Error(); got != "UNAUTHENTICATED" {
+		t.Fatalf("unexpected error string: %q", got)
+	}
+}
+
+func TestErrorDoesNotExposeSensitiveOperation(t *testing.T) {
+	err := &Error{Code: CodePermissionDenied, Op: "token=operation-secret"}
+
+	if got := err.Error(); got != "PERMISSION_DENIED" {
 		t.Fatalf("unexpected error string: %q", got)
 	}
 }
 
 func TestErrorWithoutCause(t *testing.T) {
 	err := &Error{Code: CodeInvalidArgument, Op: "lpk.write"}
-	if got := err.Error(); got != "lpk.write: INVALID_ARGUMENT" {
+	if got := err.Error(); got != "INVALID_ARGUMENT" {
 		t.Fatalf("unexpected error string: %q", got)
 	}
 }
