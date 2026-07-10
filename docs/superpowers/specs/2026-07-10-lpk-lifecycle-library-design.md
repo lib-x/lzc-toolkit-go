@@ -425,6 +425,14 @@ Unknown fields are preserved but produce warnings where the reference CLI
 would warn. Deprecated application, service health-check, and ext_config
 fields keep their reference warning codes and semantics.
 
+LazyCat official/developer-platform lint is an explicit profile, not the
+default package-constructability profile. Callers enable it with the lint
+package's official option. Only that profile reports lzc-cli 2.0.8
+pre-publish preferences such as registry.lazycat.cloud images, icon.png
+presence/PNG/200 KiB checks, locales, semver versions, devshell rejection,
+and embedded image blob checks. This distinction is intentional because those
+official submission warnings do not necessarily mean an LPK is uninstallable.
+
 ## 11. Build configuration and project creation
 
 ### 11.1 Configuration discovery
@@ -935,7 +943,7 @@ records sorted by update time without printing a table.
 
 Publish performs:
 
-1. LPK extraction and store lint checks;
+1. LPK extraction and official lint checks;
 2. rejection of devshell packages;
 3. icon.png presence, PNG validation, and size checks;
 4. manifest, package version, locales, image registry, and embedded blob
@@ -1070,7 +1078,8 @@ Lint and compatibility issues use:
     }
 
 Warnings do not become execution errors unless a request explicitly enables
-strict handling.
+strict handling. Official/developer-platform warnings are opt-in and can be
+identified with the lint package's official warning classifier.
 
 ## 21. Intentional library differences
 

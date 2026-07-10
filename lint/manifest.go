@@ -191,10 +191,11 @@ var manifestSchema = object(
 // A warning that aggregates multiple source locations uses a comma-delimited
 // path string for readability; callers must not split or otherwise parse it.
 // Warning.Code is the compatibility identifier callers should consume.
-func Manifest(source *manifestpkg.Document, _ manifestpkg.Manifest) ([]lpkgo.Warning, error) {
+func Manifest(source *manifestpkg.Document, typed manifestpkg.Manifest, optionValues ...Option) ([]lpkgo.Warning, error) {
 	if source == nil {
 		return nil, invalidManifestLintError()
 	}
+	options := applyOptions(optionValues)
 	var raw any
 	if err := source.Decode(&raw); err != nil {
 		return nil, err
@@ -267,6 +268,9 @@ func Manifest(source *manifestpkg.Document, _ manifestpkg.Manifest) ([]lpkgo.War
 			strings.Join(legacyExtPaths, ","),
 			fmt.Sprintf("Legacy ext_config HTTP routing fields are deprecated: %s.", quotePaths(legacyExtPaths)),
 		))
+	}
+	if options.official {
+		warnings = append(warnings, collectOfficialWarnings(root, typed, options)...)
 	}
 	return warnings, nil
 }

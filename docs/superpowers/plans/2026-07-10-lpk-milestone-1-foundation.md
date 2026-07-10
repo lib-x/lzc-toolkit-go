@@ -1046,7 +1046,8 @@ Commit:
 **Interfaces:**
 
 - Produces manifest.Preprocess and PreprocessFile.
-- Produces lint.Manifest, lint.ResourcePackage, and stable warning codes.
+- Produces lint.Manifest, lint.Package, lint.ResourcePackage, the optional
+  official lint profile, and stable warning codes.
 - Consumes lpkgo.Warning and manifest types.
 
 - [ ] **Step 1: Write directive matrix tests**
@@ -1148,6 +1149,22 @@ Expose:
 Use the exact reference warning codes from lib/lpk/resource_lint.js. Ignore
 dot-prefixed entries when counting visible kinds and resources. Traverse
 payloads with fs.WalkDir and stop at the first regular payload file.
+
+- [ ] **Step 6.5: Implement optional official lint profile**
+
+Expose:
+
+    func Package(ctx context.Context, root fs.FS, options ...Option) ([]lpkgo.Warning, error)
+    func WithOfficial() Option
+    func IsOfficialWarning(lpkgo.Warning) bool
+
+Default lint reports package/manifest compatibility only. WithOfficial enables
+lzc-cli 2.0.8 official/developer-platform pre-publish warnings, including
+registry.lazycat.cloud image refs, icon.png presence/PNG/200 KiB checks,
+locales, semver versions, devshell rejection, and embedded image blob checks.
+Do not make official registry or icon-size preferences hard LPK construction
+errors because those packages may still be installable outside official
+submission.
 
 - [ ] **Step 7: Verify and commit Task 6**
 
@@ -1597,12 +1614,16 @@ Use these exact command forms after npm install:
     npx --no-install lzc-cli project build "$V1_DIR" -f lzc-build.yml -o "$OUT/v1-simple.lpk"
     npx --no-install lzc-cli project build "$V2_DIR" -f lzc-build.yml -o "$OUT/v2-simple.lpk"
     npx --no-install lzc-cli project build "$RESOURCE_DIR" -f lzc-build.yml -o "$OUT/resource-only.lpk"
-    npx --no-install lzc-cli sig gen-key "$KEY_DIR" --name upstream
     npx --no-install lzc-cli lpk sign "$OUT/v2-simple.lpk" \
         --private-key "$KEY_DIR/upstream.ed25519.private.pem" \
         --public-key "$KEY_DIR/upstream.ed25519.public.pem" \
         --key-id upstream \
         --output "$OUT/signed-v2.lpk"
+
+Note: lzc-cli 2.0.8 contains `lib/sig/index.js`, but `scripts/cli.js` does
+not register the top-level `sig` command. The regeneration script therefore
+generates the Ed25519 PEM key pair with Node crypto and still signs through
+the actually exposed `lzc-cli lpk sign` command.
 
 README.md records package version, integrity, shasum, generation command, and
 fixture sha256 values.

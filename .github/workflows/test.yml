@@ -1,0 +1,107 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: go test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ["1.25", "1.26"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+      - run: go test ./...
+      - run: go vet ./...
+      - run: bash scripts/check-import-boundaries.sh
+
+  race:
+    name: go race
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - run: go test -race ./...
+
+  upstream-interop:
+    name: upstream interop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: bash scripts/regenerate-upstream-fixtures.sh
+      - run: go test ./internal/compat
+      - run: |
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          mkdir -p "$tmp/v1" "$tmp/v2"
+          cat >"$tmp/v1/manifest.yml" <<'YAML'
+          package: cloud.lazycat.test.gov1
+          version: 1.0.0
+          name: Go V1
+          locales:
+            zh:
+              name: Go V1
+          application:
+            subdomain: go-v1
+          YAML
+          cat >"$tmp/v2/package.yml" <<'YAML'
+          package: cloud.lazycat.test.gov2
+          version: 2.0.0
+          name: Go V2
+          locales:
+            zh:
+              name: Go V2
+          YAML
+          cat >"$tmp/v2/manifest.yml" <<'YAML'
+          application:
+            subdomain: go-v2
+          YAML
+          printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=' | base64 -d >"$tmp/v1/icon.png"
+          cp "$tmp/v1/icon.png" "$tmp/v2/icon.png"
+          cat >"$tmp/build-go-lpk.go" <<'GO'
+          package main
+
+          import (
+          	"context"
+          	"log"
+          	"os"
+
+          	"github.com/lib-x/lpk-go/lpk"
+          )
+
+          func main() {
+          	layout := lpk.Layout(os.Args[1])
+          	root := os.Args[2]
+          	out := os.Args[3]
+          	if _, err := lpk.WriteFile(context.Background(), out, lpk.WriteRequest{Layout: layout, Files: os.DirFS(root), Strict: true}); err != nil {
+          		log.Fatal(err)
+          	}
+          }
+          GO
+          go run "$tmp/build-go-lpk.go" v1 "$tmp/v1" "$tmp/go-v1.lpk"
+          go run "$tmp/build-go-lpk.go" v2 "$tmp/v2" "$tmp/go-v2.lpk"
+          npm_project="$tmp/npm"
+          mkdir -p "$npm_project"
+          cd "$npm_project"
+          npm init -y >/dev/null
+          npm install --save-exact @lazycatcloud/lzc-cli@2.0.8 >/dev/null
+          npx --no-install lzc-cli lpk info "$tmp/go-v1.lpk"
+          npx --no-install lzc-cli lpk info "$tmp/go-v2.lpk"
+          npx --no-install lzc-cli lpk lint "$tmp/go-v1.lpk"
+          npx --no-install lzc-cli lpk lint "$tmp/go-v2.lpk"
