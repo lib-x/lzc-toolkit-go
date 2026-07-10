@@ -16,6 +16,7 @@ const (
 	CodeRemoteUnavailable   Code = "REMOTE_UNAVAILABLE"
 	CodeIntegrityMismatch   Code = "INTEGRITY_MISMATCH"
 	CodeCancelled           Code = "CANCELLED"
+	CodeDeadlineExceeded    Code = "DEADLINE_EXCEEDED"
 )
 
 type Error struct {
@@ -68,4 +69,5 @@ var (
 	ErrRemoteUnavailable   = &Error{Code: CodeRemoteUnavailable}
 	ErrIntegrityMismatch   = &Error{Code: CodeIntegrityMismatch}
 	ErrCancelled           = &Error{Code: CodeCancelled}
+	ErrDeadlineExceeded    = &Error{Code: CodeDeadlineExceeded}
 )
