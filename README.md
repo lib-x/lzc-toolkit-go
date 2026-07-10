@@ -159,6 +159,27 @@ remote LazyCat device Docker daemon. Its result also includes the submitted
 source image, selected platform, LazyCat registry image, and final layer
 progress so CI/CD callers do not need to parse logs or rely on callbacks.
 
+Submit an LPK to the developer platform directly from an `io.Reader`:
+
+```go
+result, err := client.Publish(ctx, appstore.PublishRequest{
+    Package:    packageReader,
+    FileName:   "application.lpk",
+    Changelogs: map[string]string{"en": "Fix startup handling."},
+})
+if err != nil {
+    return err
+}
+fmt.Println(result.Upload.Package, result.Upload.Version)
+```
+
+`Publish` spools the stream with a configurable size limit, parses and runs
+official lint checks on the LPK, checks that the application exists, uploads
+the package, validates the returned package identity, and submits it for
+review. It never closes the caller-owned reader. Set `CreateIfMissing` and
+provide `Application` to explicitly permit application creation; the library
+never prompts interactively.
+
 Lint an extracted package root:
 
 ```go
