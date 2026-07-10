@@ -1064,8 +1064,12 @@ Tests cover:
 - duplicate else;
 - unmatched else and end;
 - unclosed if;
-- invalid env key and duplicate env entries;
+- invalid environment-map keys;
 - exact source filename and line in errors.
+
+Duplicate raw `KEY=VALUE` entries are validated at the build-configuration
+ingestion boundary in Milestone 2. `BuildContext.Env` is already a map, so a
+duplicate valid key cannot be represented at this preprocessing boundary.
 
 - [ ] **Step 2: Implement preprocessing**
 
@@ -1076,9 +1080,7 @@ Expose:
         Env     map[string]string
     }
 
-    type IncludeFS interface {
-        ReadFile(string) ([]byte, error)
-    }
+    type IncludeFS = fs.FS
 
     func Preprocess(
         sourceName string,
