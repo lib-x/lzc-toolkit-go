@@ -1,10 +1,5 @@
 package lpkgo
 
-import (
-	"errors"
-	"strings"
-)
-
 type Code string
 
 const (
@@ -37,15 +32,10 @@ func (e *Error) Error() string {
 	if e == nil {
 		return "<nil>"
 	}
-	prefix := strings.TrimSpace(strings.Join([]string{e.Op, e.Path}, " "))
-	detail := string(e.Code)
-	if e.Cause != nil {
-		detail += ": " + e.Cause.Error()
+	if e.Op == "" {
+		return string(e.Code)
 	}
-	if prefix == "" {
-		return detail
-	}
-	return prefix + ": " + detail
+	return e.Op + ": " + string(e.Code)
 }
 
 func (e *Error) Unwrap() error {
@@ -56,11 +46,8 @@ func (e *Error) Unwrap() error {
 }
 
 func (e *Error) Is(target error) bool {
-	var other *Error
-	if !errors.As(target, &other) {
-		return false
-	}
-	return other.Code != "" && e.Code == other.Code
+	other, ok := target.(*Error)
+	return e != nil && ok && other != nil && other.Code != "" && e.Code == other.Code
 }
 
 func Wrap(code Code, op string, cause error) error {

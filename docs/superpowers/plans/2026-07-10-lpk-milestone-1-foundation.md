@@ -70,7 +70,21 @@ Create errors_test.go with this content:
         if !errors.Is(err, cause) {
             t.Fatal("expected errors.Is to reach the wrapped cause")
         }
-        if got := err.Error(); got != "archive.read app.lpk: INTEGRITY_MISMATCH: disk failed" {
+        if got := err.Error(); got != "archive.read: INTEGRITY_MISMATCH" {
+            t.Fatalf("unexpected error string: %q", got)
+        }
+    }
+
+    func TestErrorDoesNotExposeSensitiveDetails(t *testing.T) {
+        err := &Error{
+            Code:  CodeUnauthenticated,
+            Op:    "auth.login",
+            Stage: "token=stage-secret",
+            Path:  "/tmp/password=path-secret",
+            Cause: errors.New("private-key=cause-secret"),
+        }
+
+        if got := err.Error(); got != "auth.login: UNAUTHENTICATED" {
             t.Fatalf("unexpected error string: %q", got)
         }
     }
@@ -79,6 +93,24 @@ Create errors_test.go with this content:
         err := &Error{Code: CodeInvalidArgument, Op: "lpk.write"}
         if got := err.Error(); got != "lpk.write: INVALID_ARGUMENT" {
             t.Fatalf("unexpected error string: %q", got)
+        }
+    }
+
+    func TestErrorDoesNotMatchTypedNilTarget(t *testing.T) {
+        err := &Error{Code: CodeNotFound}
+        var target *Error
+
+        if errors.Is(err, target) {
+            t.Fatal("expected a typed-nil target not to match")
+        }
+    }
+
+    func TestErrorDoesNotMatchWrappedTarget(t *testing.T) {
+        err := &Error{Code: CodeNotFound}
+        target := fmt.Errorf("wrapped target: %w", ErrNotFound)
+
+        if errors.Is(err, target) {
+            t.Fatal("expected only a direct *Error target to match")
         }
     }
 
@@ -101,11 +133,6 @@ Create go.mod:
 Implement errors.go with:
 
     package lpkgo
-
-    import (
-        "errors"
-        "strings"
-    )
 
     type Code string
 
@@ -139,15 +166,10 @@ Implement errors.go with:
         if e == nil {
             return "<nil>"
         }
-        prefix := strings.TrimSpace(strings.Join([]string{e.Op, e.Path}, " "))
-        detail := string(e.Code)
-        if e.Cause != nil {
-            detail += ": " + e.Cause.Error()
+        if e.Op == "" {
+            return string(e.Code)
         }
-        if prefix == "" {
-            return detail
-        }
-        return prefix + ": " + detail
+        return e.Op + ": " + string(e.Code)
     }
 
     func (e *Error) Unwrap() error {
@@ -158,11 +180,8 @@ Implement errors.go with:
     }
 
     func (e *Error) Is(target error) bool {
-        var other *Error
-        if !errors.As(target, &other) {
-            return false
-        }
-        return other.Code != "" && e.Code == other.Code
+        other, ok := target.(*Error)
+        return e != nil && ok && other != nil && other.Code != "" && e.Code == other.Code
     }
 
     func Wrap(code Code, op string, cause error) error {
@@ -213,7 +232,10 @@ Create version/version_test.go:
 
     package version
 
-    import "testing"
+    import (
+        "slices"
+        "testing"
+    )
 
     func TestCurrentReferenceMetadata(t *testing.T) {
         got := Current()
@@ -223,11 +245,37 @@ Create version/version_test.go:
         if got.ReferencePackage != "@lazycatcloud/lzc-cli" || got.ReferenceVersion != "2.0.8" {
             t.Fatalf("unexpected reference: %#v", got)
         }
+        if got.ReferenceIntegrity != "sha512-CcH18fg1SBqTN4od7NCXMWYaAwjICgEuguphgNcb9Lp7v5+RDYa27+BEevC7faFFm8Zhjw3Rh/sinYc7fc39SA==" {
+            t.Fatalf("ReferenceIntegrity = %q", got.ReferenceIntegrity)
+        }
+        if got.ReferenceShasum != "af9fece8a9756a00e093f817b3c3083971cc171f" {
+            t.Fatalf("ReferenceShasum = %q", got.ReferenceShasum)
+        }
+        if !slices.Equal(got.LPKLayouts, []string{"v1", "v2"}) {
+            t.Fatalf("LPKLayouts = %#v", got.LPKLayouts)
+        }
+        if !slices.Equal(got.ArchiveFormats, []string{"zip", "tar"}) {
+            t.Fatalf("ArchiveFormats = %#v", got.ArchiveFormats)
+        }
         if got.Backend.LPKV2 != "1.0.0" ||
             got.Backend.PendingSyncDevID != "1.0.4" ||
             got.Backend.BuildPackContextCache != "1.0.4" ||
             got.Backend.BlobManifestTransport != "1.0.5" {
             t.Fatalf("unexpected backend requirements: %#v", got.Backend)
+        }
+    }
+
+    func TestCurrentReturnsFreshSlices(t *testing.T) {
+        first := Current()
+        first.LPKLayouts[0] = "mutated-layout"
+        first.ArchiveFormats[0] = "mutated-format"
+
+        second := Current()
+        if !slices.Equal(second.LPKLayouts, []string{"v1", "v2"}) {
+            t.Fatalf("LPKLayouts = %#v", second.LPKLayouts)
+        }
+        if !slices.Equal(second.ArchiveFormats, []string{"zip", "tar"}) {
+            t.Fatalf("ArchiveFormats = %#v", second.ArchiveFormats)
         }
     }
 
