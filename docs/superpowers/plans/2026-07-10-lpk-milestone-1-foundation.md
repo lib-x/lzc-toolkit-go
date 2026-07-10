@@ -6,12 +6,14 @@
 
 **Architecture:** Keep the root lpkgo package limited to shared contracts. Pure format packages depend only on the Go standard library and go.yaml.in/yaml/v3. The lpk package composes archive and manifest without importing Docker, gRPC, SSH, App Store, project synchronization, or future lifecycle adapters.
 
-**Tech Stack:** Go 1.24+, standard library archive/zip, archive/tar, crypto/ed25519, crypto/sha256, encoding/json, io/fs, os.Root, and go.yaml.in/yaml/v3 v3.0.4.
+**Tech Stack:** Go 1.25+, standard library archive/zip, archive/tar, crypto/ed25519, crypto/sha256, encoding/json, io/fs, os.Root, and go.yaml.in/yaml/v3 v3.0.4.
 
 ## Global Constraints
 
 - Module path is github.com/lib-x/lpk-go.
-- Declared Go language version is 1.24.0 so os.Root is available.
+- Declared Go language version is 1.25.0 because safe extraction requires
+  os.Root.Chmod, os.Root.Link, os.Root.MkdirAll, and os.Root.Symlink; do not
+  substitute host-path or platform-specific mutation fallbacks.
 - Reference package is @lazycatcloud/lzc-cli@2.0.8.
 - Reference integrity is sha512-CcH18fg1SBqTN4od7NCXMWYaAwjICgEuguphgNcb9Lp7v5+RDYa27+BEevC7faFFm8Zhjw3Rh/sinYc7fc39SA==.
 - Reference shasum is af9fece8a9756a00e093f817b3c3083971cc171f.
@@ -136,7 +138,7 @@ Create go.mod:
 
     module github.com/lib-x/lpk-go
 
-    go 1.24.0
+    go 1.25.0
 
 Implement errors.go with:
 
@@ -1617,7 +1619,7 @@ It fails if dependency output contains:
 
 .github/workflows/test.yml contains:
 
-- a Go unit job on Go 1.24 and Go 1.26;
+- a Go unit job on Go 1.25 and Go 1.26;
 - go test ./...;
 - go vet ./...;
 - import boundary script;

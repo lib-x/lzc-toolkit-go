@@ -8,6 +8,11 @@ Module: github.com/lib-x/lpk-go
 
 Root package: lpkgo
 
+Minimum Go version: 1.25.0. Safe archive extraction requires the Go 1.25
+`os.Root` mutation methods `Chmod`, `Link`, `MkdirAll`, and `Symlink` so every
+archive-controlled filesystem mutation remains confined to the opened root.
+The library does not use weaker host-path or platform-specific fallbacks.
+
 ## 1. Purpose
 
 This project provides a reusable Go library for the complete LazyCat LPK
