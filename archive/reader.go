@@ -129,6 +129,9 @@ func OpenFile(ctx context.Context, filename string, options ...OpenOption) (*Rea
 	if err != nil {
 		return nil, err
 	}
+	if err := contextError(ctx, "archive.open_file"); err != nil {
+		return nil, err
+	}
 	file, err := os.Open(filename)
 	if err != nil {
 		code := lpkgo.CodeCommandFailed
@@ -141,15 +144,21 @@ func OpenFile(ctx context.Context, filename string, options ...OpenOption) (*Rea
 		_ = file.Close()
 		return nil, err
 	}
+	if err := contextError(ctx, "archive.open_file"); err != nil {
+		return fail(err)
+	}
+	if err := contextError(ctx, "archive.open_file"); err != nil {
+		return fail(err)
+	}
 	info, err := file.Stat()
 	if err != nil {
 		return fail(archiveError(lpkgo.CodeCommandFailed, "archive.open_file", err))
 	}
-	if info.Size() > config.limits.MaxInputBytes {
-		return fail(archiveError(lpkgo.CodeInvalidArgument, "archive.open_file", fmt.Errorf("input exceeds limit")))
-	}
 	if err := contextError(ctx, "archive.open_file"); err != nil {
 		return fail(err)
+	}
+	if info.Size() > config.limits.MaxInputBytes {
+		return fail(archiveError(lpkgo.CodeInvalidArgument, "archive.open_file", fmt.Errorf("input exceeds limit")))
 	}
 	format, err := detectFormat(file, info.Size())
 	if err != nil {

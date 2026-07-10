@@ -104,7 +104,7 @@ func localArchivePath(name string) bool {
 }
 
 func writeZIP(ctx context.Context, dst io.Writer, source fs.FS, entries []writeEntry, reproducible bool) error {
-	zw := zip.NewWriter(dst)
+	zw := zip.NewWriter(&contextWriter{ctx: ctx, writer: dst, op: "archive.write_zip"})
 	for _, entry := range entries {
 		if err := contextError(ctx, "archive.write_zip"); err != nil {
 			return err
@@ -137,14 +137,18 @@ func writeZIP(ctx context.Context, dst io.Writer, source fs.FS, entries []writeE
 	if err := contextError(ctx, "archive.write_zip"); err != nil {
 		return err
 	}
-	if err := zw.Close(); err != nil {
-		return archiveError(lpkgo.CodeCommandFailed, "archive.write_zip", err)
+	closeErr := zw.Close()
+	if err := contextError(ctx, "archive.write_zip"); err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return archiveError(lpkgo.CodeCommandFailed, "archive.write_zip", closeErr)
 	}
 	return nil
 }
 
 func writeTAR(ctx context.Context, dst io.Writer, source fs.FS, entries []writeEntry, reproducible bool) error {
-	tw := tar.NewWriter(dst)
+	tw := tar.NewWriter(&contextWriter{ctx: ctx, writer: dst, op: "archive.write_tar"})
 	for _, entry := range entries {
 		if err := contextError(ctx, "archive.write_tar"); err != nil {
 			return err
@@ -181,8 +185,12 @@ func writeTAR(ctx context.Context, dst io.Writer, source fs.FS, entries []writeE
 	if err := contextError(ctx, "archive.write_tar"); err != nil {
 		return err
 	}
-	if err := tw.Close(); err != nil {
-		return archiveError(lpkgo.CodeCommandFailed, "archive.write_tar", err)
+	closeErr := tw.Close()
+	if err := contextError(ctx, "archive.write_tar"); err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return archiveError(lpkgo.CodeCommandFailed, "archive.write_tar", closeErr)
 	}
 	return nil
 }
@@ -208,6 +216,23 @@ func copySourceFile(ctx context.Context, dst io.Writer, source fs.FS, name, op s
 
 type countingWriter struct {
 	written int64
+}
+
+type contextWriter struct {
+	ctx    context.Context
+	writer io.Writer
+	op     string
+}
+
+func (w *contextWriter) Write(buffer []byte) (int, error) {
+	if err := contextError(w.ctx, w.op); err != nil {
+		return 0, err
+	}
+	n, err := w.writer.Write(buffer)
+	if contextErr := contextError(w.ctx, w.op); contextErr != nil {
+		return n, contextErr
+	}
+	return n, err
 }
 
 func (w *countingWriter) Write(buffer []byte) (int, error) {

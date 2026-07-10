@@ -13,6 +13,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	lpkgo "github.com/lib-x/lpk-go"
 	lpkarchive "github.com/lib-x/lpk-go/archive"
 )
 
@@ -39,6 +40,45 @@ type cancelOnReadFile struct {
 	fs.File
 	cancelled bool
 	cancel    context.CancelFunc
+}
+
+type cancelOnZIPFinalizationWriter struct {
+	bytes.Buffer
+	cancel    context.CancelFunc
+	cancelled bool
+}
+
+type cancelOnTARTrailerWriter struct {
+	bytes.Buffer
+	cancel    context.CancelFunc
+	cancelled bool
+}
+
+func (w *cancelOnTARTrailerWriter) Write(buffer []byte) (int, error) {
+	n, err := w.Buffer.Write(buffer)
+	if !w.cancelled && len(buffer) >= 512 && allZero(buffer) {
+		w.cancelled = true
+		w.cancel()
+	}
+	return n, err
+}
+
+func allZero(buffer []byte) bool {
+	for _, value := range buffer {
+		if value != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func (w *cancelOnZIPFinalizationWriter) Write(buffer []byte) (int, error) {
+	n, err := w.Buffer.Write(buffer)
+	if !w.cancelled && bytes.Contains(buffer, []byte{'P', 'K', 1, 2}) {
+		w.cancelled = true
+		w.cancel()
+	}
+	return n, err
 }
 
 func (f *cancelOnReadFile) Read(buffer []byte) (int, error) {
@@ -179,6 +219,34 @@ func TestWriteStopsWhenContextIsCancelledDuringCopy(t *testing.T) {
 	}
 	if dst.closed {
 		t.Fatal("Write closed a caller-provided writer")
+	}
+}
+
+func TestWriteZIPDetectsCancellationDuringFinalization(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	dst := &cancelOnZIPFinalizationWriter{cancel: cancel}
+	source := fstest.MapFS{"empty.txt": &fstest.MapFile{}}
+
+	_, err := lpkarchive.Write(ctx, dst, source, lpkarchive.WriteOptions{Format: lpkarchive.FormatZIP, Reproducible: true})
+	if !errors.Is(err, context.Canceled) || !errors.Is(err, lpkgo.ErrCancelled) {
+		t.Fatalf("error = %v, central-directory cancellation = %v", err, dst.cancelled)
+	}
+	if got := err.Error(); got != "CANCELLED" {
+		t.Fatalf("error text = %q", got)
+	}
+}
+
+func TestWriteTARDetectsCancellationDuringFinalization(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	dst := &cancelOnTARTrailerWriter{cancel: cancel}
+	source := fstest.MapFS{"empty.txt": &fstest.MapFile{}}
+
+	_, err := lpkarchive.Write(ctx, dst, source, lpkarchive.WriteOptions{Format: lpkarchive.FormatTAR, Reproducible: true})
+	if !errors.Is(err, context.Canceled) || !errors.Is(err, lpkgo.ErrCancelled) {
+		t.Fatalf("error = %v, trailer cancellation = %v", err, dst.cancelled)
+	}
+	if got := err.Error(); got != "CANCELLED" {
+		t.Fatalf("error text = %q", got)
 	}
 }
 

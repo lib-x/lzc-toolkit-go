@@ -319,6 +319,19 @@ func TestOpenRejectsUnsupportedFormat(t *testing.T) {
 	}
 }
 
+func TestOpenFileChecksCancelledContextBeforeFilesystem(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := lpkarchive.OpenFile(ctx, t.TempDir()+"/missing.zip")
+	if !errors.Is(err, context.Canceled) || !errors.Is(err, lpkgo.ErrCancelled) {
+		t.Fatalf("error = %v", err)
+	}
+	if got := err.Error(); got != "CANCELLED" {
+		t.Fatalf("error text = %q", got)
+	}
+}
+
 func TestOpenEntryStopsReadingWhenContextIsCancelled(t *testing.T) {
 	data := makeZIP(t, map[string]string{"manifest.yml": "name: demo\n"})
 	r, err := lpkarchive.OpenReaderAt(context.Background(), bytes.NewReader(data), int64(len(data)))

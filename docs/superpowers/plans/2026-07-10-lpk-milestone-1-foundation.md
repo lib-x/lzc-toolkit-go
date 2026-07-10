@@ -683,7 +683,9 @@ Reject negative values as lpkgo.CodeInvalidArgument.
 Reader stores Format, io.ReaderAt, size, limits, and an optional cleanup
 function. Open copies the input into os.CreateTemp using a context-aware
 limited reader and rejects MaxInputBytes overflow. OpenReaderAt retains the
-caller reader without closing it. OpenFile owns and closes its os.File.
+caller reader without closing it. OpenFile checks context before any
+filesystem I/O, after os.Open, immediately before Stat, and after Stat;
+it owns and closes its os.File on every cancellation and error path.
 
 Expose:
 
@@ -761,7 +763,11 @@ TAR rules:
 - reproducible modification time is Unix epoch;
 - only directories and regular files from fs.FS are emitted.
 
-Context cancellation must stop copying and return context.Canceled.
+Context cancellation must stop copying and return context.Canceled. All ZIP
+and TAR output, including ZIP central-directory and TAR trailer finalization
+performed by Close, must pass through a writer that checks context before and
+after every underlying Write. Recheck context after archive Close before
+returning success.
 
 - [ ] **Step 7: Verify and commit Task 3**
 
