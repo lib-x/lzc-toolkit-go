@@ -127,6 +127,12 @@ func (runner *Runner) BridgeCommand(tty bool, args ...string) remote.Command {
 	return command
 }
 
+func (runner *Runner) HostCommand(tty bool, name string, args ...string) remote.Command {
+	command := remote.NewCommand(name, args...)
+	command.TTY = tty
+	return command
+}
+
 type commandExecutor struct{}
 
 func (commandExecutor) Run(ctx context.Context, name string, args []string, stdin io.Reader, stdout, stderr io.Writer) error {

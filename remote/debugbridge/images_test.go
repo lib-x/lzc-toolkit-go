@@ -33,7 +33,10 @@ func (runner *fakeRunner) Run(_ context.Context, command remote.Command) (remote
 	}
 	runner.commands = append(runner.commands, copyCommand)
 	index := len(runner.commands) - 1
-	result := runner.results[index]
+	var result remote.Result
+	if index < len(runner.results) {
+		result = runner.results[index]
+	}
 	if command.Stdout != nil {
 		_, _ = command.Stdout.Write(result.Stdout)
 	}

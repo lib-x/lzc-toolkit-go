@@ -11,14 +11,33 @@ import (
 )
 
 type CommandFactory func(tty bool, args ...string) remote.Command
+type HostCommandFactory func(tty bool, name string, args ...string) remote.Command
 
-type Client struct {
-	runner  remote.Runner
-	command CommandFactory
+type Option func(*Client)
+
+func WithUID(uid string) Option {
+	return func(client *Client) { client.uid = uid }
 }
 
-func New(runner remote.Runner, command CommandFactory) *Client {
-	return &Client{runner: runner, command: command}
+func WithHostCommand(factory HostCommandFactory) Option {
+	return func(client *Client) { client.hostCommand = factory }
+}
+
+type Client struct {
+	runner      remote.Runner
+	command     CommandFactory
+	hostCommand HostCommandFactory
+	uid         string
+}
+
+func New(runner remote.Runner, command CommandFactory, options ...Option) *Client {
+	client := &Client{runner: runner, command: command}
+	for _, option := range options {
+		if option != nil {
+			option(client)
+		}
+	}
+	return client
 }
 
 func (client *Client) Info(ctx context.Context) (remote.BackendInfo, error) {

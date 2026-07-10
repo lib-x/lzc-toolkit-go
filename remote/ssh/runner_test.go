@@ -10,6 +10,7 @@ import (
 
 	lpkgo "github.com/lib-x/lpk-go"
 	"github.com/lib-x/lpk-go/remote"
+	"github.com/lib-x/lpk-go/remote/debugbridge"
 	sshremote "github.com/lib-x/lpk-go/remote/ssh"
 )
 
@@ -39,6 +40,8 @@ func TestRunnerBuildsRemoteArgvWithoutShell(t *testing.T) {
 	}
 	executor := &fakeExecutor{stdout: "1.0.5\n"}
 	runner := sshremote.New(sshremote.Options{Target: target, Executor: executor})
+	var _ debugbridge.CommandFactory = runner.BridgeCommand
+	var _ debugbridge.HostCommandFactory = runner.HostCommand
 	var streamed bytes.Buffer
 	command := remote.NewCommand("version", "--json")
 	command.Stdout = &streamed
