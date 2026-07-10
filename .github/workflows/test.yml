@@ -78,20 +78,20 @@ jobs:
           package main
 
           import (
-          	"context"
-          	"log"
-          	"os"
+              "context"
+              "log"
+              "os"
 
-          	"github.com/lib-x/lpk-go/lpk"
+              "github.com/lib-x/lpk-go/lpk"
           )
 
           func main() {
-          	layout := lpk.Layout(os.Args[1])
-          	root := os.Args[2]
-          	out := os.Args[3]
-          	if _, err := lpk.WriteFile(context.Background(), out, lpk.WriteRequest{Layout: layout, Files: os.DirFS(root), Strict: true}); err != nil {
-          		log.Fatal(err)
-          	}
+              layout := lpk.Layout(os.Args[1])
+              root := os.Args[2]
+              out := os.Args[3]
+              if _, err := lpk.WriteFile(context.Background(), out, lpk.WriteRequest{Layout: layout, Files: os.DirFS(root), Strict: true}); err != nil {
+                  log.Fatal(err)
+              }
           }
           GO
           go run "$tmp/build-go-lpk.go" v1 "$tmp/v1" "$tmp/go-v1.lpk"
