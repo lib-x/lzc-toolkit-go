@@ -7,6 +7,9 @@ import (
 	"io"
 	"time"
 
+	"github.com/lib-x/lzc-toolkit-go/build"
+	"github.com/lib-x/lzc-toolkit-go/lpk"
+	"github.com/lib-x/lzc-toolkit-go/manifest"
 	"github.com/lib-x/lzc-toolkit-go/remote"
 )
 
@@ -89,6 +92,65 @@ type Info struct {
 type InfoRequest struct {
 	AppID        string
 	LocalVersion string
+}
+
+type Kind string
+
+const (
+	KindStatic  Kind = "static"
+	KindExec    Kind = "exec"
+	KindService Kind = "service"
+)
+
+type InspectRequest struct {
+	Root               string
+	ConfigFile         string
+	Environment        map[string]string
+	InheritEnvironment bool
+	VersionOverride    string
+	ForceV2            bool
+}
+
+type FileInfo struct {
+	Root             string `json:"root"`
+	BuildConfig      string `json:"buildConfig"`
+	BuildParent      string `json:"buildParent"`
+	PackageFile      string `json:"packageFile"`
+	ManifestFile     string `json:"manifestFile"`
+	PackageOutputDir string `json:"packageOutputDir"`
+	LPKPath          string `json:"lpkPath"`
+	ContentDir       string `json:"contentDir"`
+	Icon             string `json:"icon"`
+	DeployParams     string `json:"deployParams"`
+}
+
+type ResourceExportInfo struct {
+	Kind   string `json:"kind"`
+	Source string `json:"source"`
+}
+
+type BuildInfo struct {
+	Profile                build.Profile        `json:"profile"`
+	HasBuildScript         bool                 `json:"hasBuildScript"`
+	HasContent             bool                 `json:"hasContent"`
+	HasComposeOverride     bool                 `json:"hasComposeOverride"`
+	ConfiguredImageAliases []string             `json:"configuredImageAliases"`
+	ResourceExports        []ResourceExportInfo `json:"resourceExports"`
+}
+
+type Inspection struct {
+	SchemaVersion int                         `json:"schemaVersion"`
+	Kind          Kind                        `json:"kind"`
+	Layout        lpk.Layout                  `json:"layout"`
+	ResourceOnly  bool                        `json:"resourceOnly"`
+	Files         FileInfo                    `json:"files"`
+	Package       manifest.PackageSummary     `json:"package"`
+	Build         BuildInfo                   `json:"build"`
+	Application   manifest.ApplicationSummary `json:"application"`
+	Services      []manifest.ServiceSummary   `json:"services"`
+	Images        []manifest.ImageSummary     `json:"images"`
+	Template      manifest.TemplateInfo       `json:"template"`
+	Diagnostics   []manifest.Diagnostic       `json:"diagnostics"`
 }
 
 type DeployRequest struct {
