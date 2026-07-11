@@ -83,6 +83,7 @@ go get github.com/lib-x/lzc-toolkit-go
 |------|--------------|
 | 读写、解压 LPK | `lpk` |
 | 解析和预处理 Manifest | `manifest` |
+| 检查本地源码项目 | `project` |
 | 查看 LPK 摘要 | `inspect` |
 | 构建项目 | `build` |
 | 检查 OCI 布局 | `oci` |
@@ -780,6 +781,37 @@ ShellAPI 配置的默认位置：
 - Linux：`~/.config/hportal-client/`
 - macOS：`~/Library/Application Support/hportal-client/`
 - Windows：`~/AppData/Roaming/hportal-client/`
+
+### 检查本地项目
+
+`project.Inspect` 可以读取现有项目，但不会运行 `buildscript`、构建镜像、
+写入 LPK，也不会连接懒猫设备：
+
+```go
+inspection, err := project.Inspect(ctx, project.InspectRequest{
+    Root:       ".",
+    ConfigFile: "lzc-build.yml",
+})
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("%s %s %s services=%d images=%d templated=%t\n",
+    inspection.Package.Package,
+    inspection.Package.Version,
+    inspection.Kind,
+    len(inspection.Services),
+    len(inspection.Images),
+    inspection.Template.Present,
+)
+```
+
+返回结果可以稳定编码为 JSON，初始契约为 `SchemaVersion == 1`。其中包含
+规范化后的包信息、构建配置、应用、服务、镜像和模板元数据，但不会输出构建
+环境值、部署参数值、脚本或原始模板表达式。
+
+如果只处理 Manifest，可以使用 `manifest.Analyze`。它支持普通 YAML 和常见
+LazyCat Go Template 控制块、标量表达式，能够生成 YAML 安全投影并精确恢复
+原始 action，但永远不会执行或渲染模板。
 
 ### 项目生命周期
 

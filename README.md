@@ -83,6 +83,7 @@ That copy runs on the developer platform. It does not require Docker on the call
 |------|--------------------|
 | Read, write, or extract an LPK | `lpk` |
 | Parse and preprocess a Manifest | `manifest` |
+| Inspect a local source project | `project` |
 | Inspect an LPK summary | `inspect` |
 | Build a project | `build` |
 | Validate an OCI layout | `oci` |
@@ -783,6 +784,39 @@ Default ShellAPI directories:
 - Linux: `~/.config/hportal-client/`
 - macOS: `~/Library/Application Support/hportal-client/`
 - Windows: `~/AppData/Roaming/hportal-client/`
+
+### Inspect a local project
+
+`project.Inspect` reads an existing project without running `buildscript`,
+building images, writing an LPK, or contacting a LazyCat device:
+
+```go
+inspection, err := project.Inspect(ctx, project.InspectRequest{
+    Root:       ".",
+    ConfigFile: "lzc-build.yml",
+})
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("%s %s %s services=%d images=%d templated=%t\n",
+    inspection.Package.Package,
+    inspection.Package.Version,
+    inspection.Kind,
+    len(inspection.Services),
+    len(inspection.Images),
+    inspection.Template.Present,
+)
+```
+
+The result is deterministic JSON-ready data with `SchemaVersion == 1`. It
+contains normalized package, build, application, service, image, and template
+metadata, but never build environment values, deployment values, scripts, or
+raw template actions.
+
+For Manifest-only tooling, `manifest.Analyze` accepts plain YAML and common
+LazyCat Go Template controls and scalar expressions. It creates a YAML-safe
+projection and can restore the exact original actions, but it never executes
+or renders the template.
 
 ### Project lifecycle
 
