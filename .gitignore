@@ -33,3 +33,6 @@ go.work.sum
 
 # Local feature worktrees
 .worktrees/
+
+# Firecrawl research cache
+.firecrawl/
