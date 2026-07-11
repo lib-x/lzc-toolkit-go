@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	lpkgo "github.com/lib-x/lzc-toolkit-go"
@@ -70,7 +71,8 @@ func Analyze(data []byte) (*Analysis, error) {
 			nextLine++
 		}
 		standalone := actionIsStandalone(data, action.start, action.end)
-		kind := actionKind(data[action.start:action.end])
+		actionBytes := data[action.start:action.end]
+		kind := actionKind(actionBytes)
 		control := standalone && isControlKind(kind)
 		depth := len(stack)
 
@@ -86,7 +88,9 @@ func Analyze(data []byte) (*Analysis, error) {
 			if len(stack) == 0 || stack[len(stack)-1].elseSeen {
 				return nil, templateAnalysisError("manifest.analyze.control", action.line, "invalid template control structure")
 			}
-			stack[len(stack)-1].elseSeen = true
+			if !isChainedElse(actionBytes) {
+				stack[len(stack)-1].elseSeen = true
+			}
 			if !standalone {
 				analysis.template.HasInlineConditions = true
 			}
@@ -130,6 +134,7 @@ func Analyze(data []byte) (*Analysis, error) {
 	if len(stack) != 0 {
 		return nil, templateAnalysisError("manifest.analyze.control", stack[len(stack)-1].line, "unclosed template control block")
 	}
+	sort.Strings(analysis.template.ActionKinds)
 	for lineCount := bytes.Count(data, []byte{'\n'}) + 1; nextLine <= lineCount; nextLine++ {
 		analysis.lineDepth[nextLine] = len(stack)
 	}
@@ -294,13 +299,22 @@ func actionIsStandalone(data []byte, start int, end int) bool {
 }
 
 func actionKind(action []byte) string {
-	body := strings.TrimSpace(string(action[2 : len(action)-2]))
-	body = strings.TrimSpace(strings.TrimPrefix(body, "-"))
-	body = strings.TrimSpace(strings.TrimSuffix(body, "-"))
-	if fields := strings.Fields(body); len(fields) != 0 {
+	if fields := templateActionFields(action); len(fields) != 0 {
 		return fields[0]
 	}
 	return "expression"
+}
+
+func isChainedElse(action []byte) bool {
+	fields := templateActionFields(action)
+	return len(fields) > 1 && (fields[1] == "if" || fields[1] == "with")
+}
+
+func templateActionFields(action []byte) []string {
+	body := strings.TrimSpace(string(action[2 : len(action)-2]))
+	body = strings.TrimSpace(strings.TrimPrefix(body, "-"))
+	body = strings.TrimSpace(strings.TrimSuffix(body, "-"))
+	return strings.Fields(body)
 }
 
 func isControlKind(kind string) bool {

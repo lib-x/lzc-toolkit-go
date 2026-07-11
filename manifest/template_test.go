@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -241,5 +242,77 @@ func TestAnalyzeRejectsInvalidControlStructure(t *testing.T) {
 				t.Fatalf("Analyze() error = %#v", err)
 			}
 		})
+	}
+}
+
+func TestAnalyzeSupportsElseIfChain(t *testing.T) {
+	t.Parallel()
+	source := []byte(`{{ if .U.first }}
+value: first
+{{ else if .U.second }}
+value: second
+{{ else }}
+value: fallback
+{{ end }}
+`)
+	analysis, err := manifest.Analyze(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projected, err := analysis.Document().Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := analysis.Restore(projected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(restored, []byte("{{ else if .U.second }}")) {
+		t.Fatalf("Restore() lost else-if chain:\n%s", restored)
+	}
+}
+
+func TestAnalyzeSupportsElseWithChain(t *testing.T) {
+	t.Parallel()
+	source := []byte(`{{ with .U.first }}
+value: first
+{{ else with .U.second }}
+value: second
+{{ else }}
+value: fallback
+{{ end }}
+`)
+	analysis, err := manifest.Analyze(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projected, err := analysis.Document().Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := analysis.Restore(projected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(restored, []byte("{{ else with .U.second }}")) {
+		t.Fatalf("Restore() lost else-with chain:\n%s", restored)
+	}
+}
+
+func TestAnalyzeReturnsSortedActionKinds(t *testing.T) {
+	t.Parallel()
+	source := []byte(`{{ if .U.enabled }}
+value: {{ stable_secret "secret" }}-{{ index .U "port" }}-{{ .U.value }}
+{{ else }}
+value: fallback
+{{ end }}
+`)
+	analysis, err := manifest.Analyze(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{".U.value", "else", "end", "if", "index", "stable_secret"}
+	if got := analysis.Template().ActionKinds; !slices.Equal(got, want) {
+		t.Fatalf("Template().ActionKinds = %#v, want %#v", got, want)
 	}
 }
