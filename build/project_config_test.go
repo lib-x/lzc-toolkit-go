@@ -6,6 +6,7 @@ import (
 	"errors"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	lpkgo "github.com/lib-x/lzc-toolkit-go"
@@ -98,13 +99,12 @@ func TestResolveConfigCoercesStaticManifestScalars(t *testing.T) {
 		{name: "null", key: "package", manifest: "package: null\n", environment: "fallback", want: ""},
 		{name: "bool", key: "version", manifest: "version: true\n", environment: "fallback", want: "true"},
 		{name: "int", key: "name", manifest: "name: 42\n", environment: "fallback", want: "42"},
-		{name: "unsigned compatible integer", key: "subdomain", manifest: "application:\n  subdomain: 18446744073709551615\n", environment: "fallback", want: "18446744073709551615"},
+		{name: "plain nested unsigned integer", key: "subdomain", manifest: "application:\n  subdomain: 18446744073709551615\n", environment: "fallback", want: "fallback"},
 		{name: "float", key: "description", manifest: "description: 1.25\n", environment: "fallback", want: "1.25"},
 		{name: "quoted string", key: "license", manifest: "license: 'Apache-2.0'\n", environment: "fallback", want: "Apache-2.0"},
 		{name: "templated", key: "package", manifest: "package: '{{ .Package }}'\n", environment: "fallback", want: "fallback"},
 		{name: "conditional", key: "package", manifest: "{{ if .UsePackage }}\npackage: 42\n{{ end }}\n", environment: "fallback", want: "fallback"},
 		{name: "static with unrelated template", key: "package", manifest: "package: 42\n{{ if .Worker }}\nservices: {}\n{{ end }}\n", environment: "fallback", want: "42"},
-		{name: "ambiguous", key: "version", manifest: "version: first\nversion: second\n", environment: "fallback", want: "fallback"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -123,6 +123,81 @@ func TestResolveConfigCoercesStaticManifestScalars(t *testing.T) {
 				t.Fatalf("ContentDir = %q, want %q", resolved.Loaded.Config.ContentDir, test.want)
 			}
 		})
+	}
+}
+
+func TestResolveConfigPlainYAMLDoesNotAddNestedSubdomainSubstitution(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "lzc-build.yml", "contentdir: ${subdomain}\n")
+	writeTestFile(t, root, "lzc-manifest.yml", "application:\n  subdomain: manifest-value\n")
+
+	resolved, err := ResolveConfig(context.Background(), ConfigRequest{
+		Root:        root,
+		Environment: map[string]string{"subdomain": "environment-value"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Loaded.Config.ContentDir != "environment-value" {
+		t.Fatalf("ContentDir = %q", resolved.Loaded.Config.ContentDir)
+	}
+}
+
+func TestResolveConfigTemplatedManifestAddsStaticSubdomainSubstitution(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "lzc-build.yml", "contentdir: ${subdomain}\n")
+	writeTestFile(t, root, "lzc-manifest.yml", "application:\n  subdomain: manifest-value\n{{ if .U.enabled }}\n  background_task: true\n{{ end }}\n")
+
+	resolved, err := ResolveConfig(context.Background(), ConfigRequest{
+		Root:        root,
+		Environment: map[string]string{"subdomain": "environment-value"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Loaded.Config.ContentDir != "manifest-value" {
+		t.Fatalf("ContentDir = %q", resolved.Loaded.Config.ContentDir)
+	}
+}
+
+func TestResolveConfigRejectsDuplicatePlainManifestMapping(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "lzc-build.yml", "contentdir: ${version}\n")
+	manifestPath := filepath.Join(root, "lzc-manifest.yml")
+	writeTestFile(t, root, "lzc-manifest.yml", "version: first\nversion: second\n")
+
+	_, err := ResolveConfig(context.Background(), ConfigRequest{Root: root})
+	var structured *lpkgo.Error
+	if !errors.As(err, &structured) {
+		t.Fatalf("error = %#v", err)
+	}
+	if structured.Code != lpkgo.CodeInvalidConfig || structured.Op != "build.template_manifest" || structured.Path != filepath.ToSlash(manifestPath) {
+		t.Fatalf("error = %#v", structured)
+	}
+	if structured.Cause == nil || !strings.Contains(structured.Cause.Error(), "already defined") {
+		t.Fatalf("cause = %v", structured.Cause)
+	}
+}
+
+func TestResolveConfigPlainYAMLResolvesMergeKeyPackageSubstitution(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "lzc-build.yml", "contentdir: ${package}\n")
+	writeTestFile(t, root, "lzc-manifest.yml", `
+defaults: &defaults
+  package: community.lazycat.app.merged
+<<: *defaults
+version: 1.0.0
+`)
+
+	resolved, err := ResolveConfig(context.Background(), ConfigRequest{
+		Root:        root,
+		Environment: map[string]string{"package": "fallback"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Loaded.Config.ContentDir != "community.lazycat.app.merged" {
+		t.Fatalf("ContentDir = %q", resolved.Loaded.Config.ContentDir)
 	}
 }
 

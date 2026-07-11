@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -336,6 +337,54 @@ func TestAnalyzeActionKindsNeverExposeLiteralTokens(t *testing.T) {
 	for _, private := range []string{"private.registry/internal/image:secret-tag", "8675309", "private-raw-literal", "$private", ".U.private", "(index"} {
 		if bytes.Contains(encoded, []byte(private)) {
 			t.Fatalf("Template() exposed %q: %s", private, encoded)
+		}
+	}
+}
+
+func TestAnalysisStaticScalarRequiresOneUnconditionalExpressionFreeValue(t *testing.T) {
+	t.Parallel()
+	source := []byte(`string: value
+boolean: true
+integer: 42
+unsigned: 18446744073709551615
+floating: 1.25
+null_value: null
+templated: {{ .U.value }}
+duplicate: first
+duplicate: second
+{{ if .U.enabled }}
+conditional: hidden
+{{ end }}
+application:
+  subdomain: demo
+`)
+	analysis, err := manifest.Analyze(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		path  []string
+		want  any
+		found bool
+	}{
+		{path: []string{"string"}, want: "value", found: true},
+		{path: []string{"boolean"}, want: true, found: true},
+		{path: []string{"integer"}, want: 42, found: true},
+		{path: []string{"unsigned"}, want: uint64(18446744073709551615), found: true},
+		{path: []string{"floating"}, want: 1.25, found: true},
+		{path: []string{"null_value"}, want: nil, found: true},
+		{path: []string{"application", "subdomain"}, want: "demo", found: true},
+		{path: []string{"templated"}, found: false},
+		{path: []string{"duplicate"}, found: false},
+		{path: []string{"conditional"}, found: false},
+	}
+	for _, test := range tests {
+		got, found, err := analysis.StaticScalar(test.path...)
+		if err != nil {
+			t.Fatalf("StaticScalar(%v) error = %v", test.path, err)
+		}
+		if found != test.found || !reflect.DeepEqual(got, test.want) {
+			t.Fatalf("StaticScalar(%v) = (%#v, %t), want (%#v, %t)", test.path, got, found, test.want, test.found)
 		}
 	}
 }

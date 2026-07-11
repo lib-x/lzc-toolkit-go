@@ -112,38 +112,39 @@ func loadStaticPackageValues(ctx context.Context, root string, loaded LoadedConf
 		if preprocessErr != nil {
 			return nil, preprocessErr
 		}
+		var plain map[string]any
+		yamlErr := yaml.Unmarshal(data, &plain)
 		analysis, analyzeErr := manifest.Analyze(data)
 		if analyzeErr != nil {
-			if !isGoTemplate(data) {
-				var raw map[string]any
-				if yamlErr := yaml.Unmarshal(data, &raw); yamlErr != nil {
-					return nil, configError("build.template_manifest", manifestPath, yamlErr)
-				}
+			if yamlErr != nil {
+				return nil, configError("build.template_manifest", manifestPath, yamlErr)
 			}
 			return nil, analyzeErr
 		}
-		fields := []struct {
-			key  string
-			path []string
-		}{
-			{key: "package", path: []string{"package"}},
-			{key: "version", path: []string{"version"}},
-			{key: "name", path: []string{"name"}},
-			{key: "description", path: []string{"description"}},
-			{key: "author", path: []string{"author"}},
-			{key: "license", path: []string{"license"}},
-			{key: "homepage", path: []string{"homepage"}},
-			{key: "min_os_version", path: []string{"min_os_version"}},
-			{key: "subdomain", path: []string{"application", "subdomain"}},
-		}
-		for _, field := range fields {
-			value, found, lookupErr := analysis.StaticScalar(field.path...)
-			if lookupErr != nil {
-				return nil, lookupErr
+		if yamlErr == nil && !analysis.Template().Present {
+			mergeStaticScalarValues(values, plain)
+		} else if !analysis.Template().Present {
+			if yamlErr != nil {
+				return nil, configError("build.template_manifest", manifestPath, yamlErr)
 			}
-			if found {
-				if stringValue, ok := stringifyTemplateScalar(value); ok {
-					values[field.key] = stringValue
+		} else {
+			for _, field := range []struct {
+				key  string
+				path []string
+			}{
+				{key: "package", path: []string{"package"}},
+				{key: "version", path: []string{"version"}},
+				{key: "name", path: []string{"name"}},
+				{key: "subdomain", path: []string{"application", "subdomain"}},
+			} {
+				value, found, lookupErr := analysis.StaticScalar(field.path...)
+				if lookupErr != nil {
+					return nil, lookupErr
+				}
+				if found {
+					if stringValue, ok := stringifyTemplateScalar(value); ok {
+						values[field.key] = stringValue
+					}
 				}
 			}
 		}
@@ -171,6 +172,14 @@ func loadStaticPackageValues(ctx context.Context, root string, loaded LoadedConf
 		return nil, buildPathError("build.template_package", packagePath, err)
 	}
 	return values, nil
+}
+
+func mergeStaticScalarValues(destination map[string]string, source map[string]any) {
+	for key, value := range source {
+		if stringValue, ok := stringifyTemplateScalar(value); ok {
+			destination[key] = stringValue
+		}
+	}
 }
 
 func stringifyTemplateScalar(value any) (string, bool) {
