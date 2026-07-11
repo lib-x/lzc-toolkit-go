@@ -2,9 +2,10 @@
 
 ## Goal
 
-Add anonymous, read-only official App Store APIs to the existing `appstore`
-package. The new API reads the public metarepo hosted by LazyCat and constructs
-official asset and LPK download URLs without requiring an account token.
+Add anonymous, read-only official App Store APIs under `appstore/official` and
+Miaomiao private community-store APIs under `appstore/private`. The official
+API reads the public metarepo hosted by LazyCat and constructs official asset
+and LPK download URLs without requiring an account token.
 
 The existing `Client` remains the authenticated developer-platform client used
 for publishing, image copying, TestFlight, and other developer operations.
@@ -34,32 +35,63 @@ release name, and then fetch the requested snapshot file. Categories, kinds,
 application details, rankings, and changelogs use the stable locale directory.
 The client does not parse the `lazycat.cloud/appstore` HTML page.
 
-## Package API
+## Package layout and official API
 
-All new declarations remain in package `appstore`, but use a separate client:
+The root `appstore` package remains the authenticated developer-platform API.
+Official public catalog calls use their own import path:
 
 ```go
-client := appstore.NewPublicClient(appstore.PublicOptions{})
+client := official.New(official.Options{})
 
-app, err := client.GetApplication(ctx, "wx.clawbot.lazycat.app.mediasaber")
+app, err := client.Application(ctx, "wx.clawbot.lazycat.app.mediasaber")
 homepage, err := client.Homepage(ctx)
 categories, err := client.Categories(ctx)
 kinds, err := client.Kinds(ctx)
 ```
 
-`PublicOptions` contains:
+`official.Options` contains:
 
 - `MetadataBaseURL`, defaulting to `https://dl.lazycat.cloud/appstore/metarepo`.
 - `DownloadBaseURL`, defaulting to `https://dl.lazycatmicroserver.com`.
 - `Locale`, defaulting to `zh`.
 - `HTTPClient`, defaulting to an HTTP client with a 30-second timeout.
 
-`PublicClient` intentionally has no token provider. Its requests never set
+`official.Client` intentionally has no token provider. Its requests never set
 `X-User-Token`, `Authorization`, or a `userToken` cookie.
+
+## Private community store API
+
+The `appstore/private` package provides a separate `private.Client` for the
+Miaomiao private community store protocol. It does not reuse `official.Client`
+because its base URL, response model, and private-group access rules differ
+from the official metarepo.
+
+`private.New(private.Options)` requires a caller-supplied store
+base URL and accepts an HTTP client plus default private group codes. It never
+requires an account token. `LatestVersion` calls:
+
+`GET /api/v1/packages/{packageId}/latest-version`
+
+The method returns only the latest approved version visible to the request.
+Missing, unpublished, versionless, or inaccessible applications all map the
+server's `404 APP_NOT_FOUND` response to `lpkgo.ErrNotFound`.
+
+Private group codes are six-character bearer credentials. The client trims,
+uppercases, validates, deduplicates, and order-preserves codes using the server
+contract. Client defaults and request-specific codes are merged. Codes are sent
+through `X-Group-Codes` by default so they do not appear in URLs or access logs;
+callers may explicitly choose query or combined header-and-query placement for
+compatibility.
+
+The private-store implementation is split into `appstore/private/client.go`,
+`groups.go`, `version.go`, and matching tests. Its response types are
+`LatestVersion` and `Version`, reflecting the community
+store's `packageId`, `latestVersion`, `downloadUrl`, `sha256`, size, source,
+publication, and creation fields.
 
 The first public surface contains:
 
-- `GetApplication(ctx, packageName)` for the latest application metadata and
+- `Application(ctx, packageName)` for the latest application metadata and
   version.
 - `Categories(ctx)` and `Kinds(ctx)` for stable dictionaries.
 - `Homepage(ctx)` for the current release's configured homepage blocks.
@@ -81,15 +113,15 @@ segments before URL construction.
 The public response types follow the observed JSON rather than reshaping it into
 the authenticated developer API types:
 
-- `PublicApplication`
-- `PublicApplicationInfo`
-- `PublicVersion`
-- `PublicDeveloper`
-- `PublicRating` and `PublicRatingStatistics`
-- `PublicCounts`
-- `PublicCategory`
-- `PublicKind`
-- `HomepageBlock`
+- `official.Application`
+- `official.ApplicationInfo`
+- `official.Version`
+- `official.Developer`
+- `official.Rating` and `official.RatingStatistics`
+- `official.Counts`
+- `official.Category`
+- `official.Kind`
+- `official.HomepageBlock`
 
 JSON field names remain represented by struct tags. RFC3339 timestamps use
 `time.Time`. Unstable or block-specific homepage payloads retain a typed block
@@ -103,19 +135,23 @@ continue to work in tests and mirrors.
 
 ## Files
 
-The implementation is split by responsibility inside `appstore`:
+The implementation is split by responsibility inside `appstore/official`:
 
-- `public_client.go`: options, client construction, bounded anonymous HTTP, and
+- `client.go`: options, client construction, bounded anonymous HTTP, and
   release lookup.
-- `public_types.go`: shared public response models.
-- `public_app.go`: application detail and version changelog APIs.
-- `public_home.go`: categories, kinds, homepage, and more-list APIs.
-- `public_rankings.go`: download and developer ranking APIs.
-- `public_urls.go`: path validation and asset/LPK URL resolution.
+- `types.go`: shared public response models.
+- `application.go`: application detail and version changelog APIs.
+- `home.go`: categories, kinds, homepage, and more-list APIs.
+- `rankings.go`: download and developer ranking APIs.
+- `urls.go`: path validation and asset/LPK URL resolution.
 - Matching `*_test.go` files for each concern.
+- `appstore/private/client.go`: private store construction and bounded anonymous HTTP.
+- `appstore/private/groups.go`: group-code normalization and placement.
+- `appstore/private/version.go`: exact-package latest approved version lookup.
+- Matching tests in `appstore/private`.
 
-This keeps anonymous catalog behavior separate from the authenticated request
-implementation in `client.go` while preserving one import path for callers.
+This makes the official catalog, private community store, and authenticated
+developer platform separate import boundaries.
 
 ## Errors and limits
 

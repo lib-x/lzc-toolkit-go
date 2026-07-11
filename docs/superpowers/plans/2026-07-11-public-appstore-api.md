@@ -4,14 +4,14 @@
 
 **Goal:** Add anonymous, typed, read-only official App Store APIs to the existing `appstore` Go package.
 
-**Architecture:** Introduce a token-free `PublicClient` alongside the existing authenticated `Client`. Stable locale endpoints serve application details, dictionaries, rankings, and changelogs; homepage and more-list methods resolve the current metarepo release before fetching snapshot JSON. URL helpers resolve official asset and LPK paths without exposing arbitrary remote requests.
+**Architecture:** Keep the existing authenticated developer client in root package `appstore`, add the anonymous official catalog as `appstore/official`, and add the Miaomiao private community store as `appstore/private`. Stable locale endpoints serve official application details, dictionaries, rankings, and changelogs; homepage and more-list methods resolve the current metarepo release before fetching snapshot JSON. The private client uses a caller-supplied base URL and optional private group codes.
 
 **Tech Stack:** Go 1.25, `net/http`, `net/url`, `encoding/json`, `httptest`, existing `lpkgo.Error` conventions.
 
 ## Global Constraints
 
-- All declarations remain in package `appstore`, split across focused `public_*.go` files.
-- `PublicClient` has no token field or token option and never sends authentication headers or cookies.
+- Official declarations live in `appstore/official`; private community-store declarations live in `appstore/private`; root `appstore` remains the developer API.
+- `official.Client` has no token field or token option and never sends authentication headers or cookies.
 - Default metadata root is `https://dl.lazycat.cloud/appstore/metarepo`.
 - Default LPK download root is `https://dl.lazycatmicroserver.com`.
 - Default locale is `zh`.
@@ -19,22 +19,32 @@
 - Categories, kinds, application details, rankings, and changelogs use the stable locale directory.
 - Ranking periods are exactly `week`, `month`, and `all`.
 - Remote bodies are bounded and external paths are validated before URL construction.
+- The Miaomiao private store uses a separate `private.Client` with a required caller-supplied base URL.
+- Private group codes are normalized to unique uppercase six-character alphanumeric values and default to `X-Group-Codes` transport.
 
 ---
 
+## Approved Directory Layout
+
+The user approved directory-level separation after the original plan was
+written. The following mapping supersedes any older `public_*` or `private_*`
+root-package paths and prefixed type names in task snippets:
+
+| Original plan name | Implemented name |
+| --- | --- |
+| `appstore/public_client.go`, `PublicClient`, `PublicOptions` | `appstore/official/client.go`, `official.Client`, `official.Options` |
+| `appstore/public_types.go`, `PublicApplication`, `PublicVersion` | `appstore/official/types.go`, `official.Application`, `official.Version` |
+| `appstore/public_app.go` | `appstore/official/application.go` |
+| `appstore/public_home.go` | `appstore/official/home.go` |
+| `appstore/public_rankings.go` | `appstore/official/rankings.go` |
+| `appstore/public_urls.go` | `appstore/official/urls.go` |
+| `NewPublicClient`, `GetApplication` | `official.New`, `(*official.Client).Application` |
+| root `PrivateStoreClient` and `Private*` types | `appstore/private` package with `private.Client`, `private.Options`, `private.LatestVersion`, and `private.Version` |
+
 ## File Structure
 
-- Create `appstore/public_client.go`: options, construction, anonymous bounded HTTP, release lookup, shared JSON decoding.
-- Create `appstore/public_client_test.go`: defaults, no-auth contract, errors, cancellation, response limit, release lookup.
-- Create `appstore/public_types.go`: public application, version, developer, category, kind, block, rating, and count types.
-- Create `appstore/public_urls.go`: safe segment validation and asset/download URL resolution.
-- Create `appstore/public_urls_test.go`: URL construction, traversal rejection, application/version matching.
-- Create `appstore/public_app.go`: application metadata and version changelog methods.
-- Create `appstore/public_app_test.go`: real response-shape decoding and exact package-derived paths.
-- Create `appstore/public_home.go`: categories, kinds, homepage, and more-list methods.
-- Create `appstore/public_home_test.go`: stable dictionary calls and two-request release snapshot flows.
-- Create `appstore/public_rankings.go`: download and developer rankings.
-- Create `appstore/public_rankings_test.go`: period validation and typed ranking decoding.
+- Create focused implementation and test files under `appstore/official` for client, types, URLs, application, home, and rankings.
+- Create focused implementation and test files under `appstore/private` for client, groups, and latest-version lookup.
 - Modify `README.md`: add anonymous catalog example and method summary.
 - Modify `README.zh-CN.md`: add matching Chinese documentation.
 
@@ -414,14 +424,142 @@ git commit -m "feat: add public app store rankings"
 
 ---
 
-### Task 5: Documentation and Full Verification
+### Task 5: Miaomiao Private Store and Private Groups
+
+**Files:**
+- Create: `appstore/private_client.go`
+- Create: `appstore/private_groups.go`
+- Create: `appstore/private_version.go`
+- Create: `appstore/private_client_test.go`
+
+**Interfaces:**
+- Produces: `PrivateStoreOptions`, `PrivateStoreClient`, `NewPrivateStoreClient`, `GroupCodePlacement`, `PrivateLatestVersionRequest`, `PrivateLatestVersion`, and `PrivateVersion`.
+
+- [ ] **Step 1: Write a failing latest-version and private-group test**
+
+Create a test server that requires path
+`/api/v1/packages/community.lazycat.group-app/latest-version`, checks normalized
+codes `ABC123,LATE23`, and returns:
+
+```json
+{
+  "packageId": "community.lazycat.group-app",
+  "latestVersion": {
+    "id": 7,
+    "appId": 3,
+    "uploaderId": 2,
+    "version": "3.0.0",
+    "changelog": "Private release",
+    "status": "APPROVED",
+    "sourceType": "LOCAL",
+    "downloadUrl": "https://store.example/download/app.lpk",
+    "fileSize": 1024,
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "publishedAt": "2026-07-11T00:00:00Z",
+    "createdAt": "2026-07-10T00:00:00Z"
+  }
+}
+```
+
+Assert no account token headers or cookies are sent.
+
+- [ ] **Step 2: Run the focused test and confirm the API is missing**
+
+Run: `go test ./appstore -run 'TestPrivateStore' -count=1`
+
+Expected: build failure because private store types do not exist.
+
+- [ ] **Step 3: Implement the private store contract**
+
+```go
+type GroupCodePlacement uint8
+
+const (
+    GroupCodesHeader GroupCodePlacement = iota
+    GroupCodesQuery
+    GroupCodesHeaderAndQuery
+)
+
+type PrivateStoreOptions struct {
+    BaseURL            string
+    HTTPClient         *http.Client
+    GroupCodes         []string
+    GroupCodePlacement GroupCodePlacement
+}
+
+type PrivateLatestVersionRequest struct {
+    PackageID  string
+    GroupCodes []string
+}
+
+func NewPrivateStoreClient(options PrivateStoreOptions) (*PrivateStoreClient, error)
+func (client *PrivateStoreClient) LatestVersion(ctx context.Context, input PrivateLatestVersionRequest) (PrivateLatestVersion, error)
+```
+
+Normalize codes with the reference server rules: trim, uppercase, exactly six
+ASCII letters/digits, discard invalid entries, deduplicate, and preserve first
+appearance. Merge client defaults before request codes. Header placement is the
+zero-value default; query and combined placement are explicit opt-ins.
+
+- [ ] **Step 4: Implement the exact response model and errors**
+
+```go
+type PrivateLatestVersion struct {
+    PackageID     string         `json:"packageId"`
+    LatestVersion PrivateVersion `json:"latestVersion"`
+}
+
+type PrivateVersion struct {
+    ID          int        `json:"id"`
+    AppID       int        `json:"appId"`
+    UploaderID  int        `json:"uploaderId"`
+    Version     string     `json:"version"`
+    Changelog   string     `json:"changelog"`
+    Status      string     `json:"status"`
+    SourceType  string     `json:"sourceType"`
+    DownloadURL string     `json:"downloadUrl"`
+    StorageKey  string     `json:"storageKey,omitempty"`
+    StoragePath string     `json:"storagePath,omitempty"`
+    FileSize    int64      `json:"fileSize"`
+    SHA256      string     `json:"sha256"`
+    PublishedAt *time.Time `json:"publishedAt,omitempty"`
+    CreatedAt   time.Time  `json:"createdAt"`
+}
+```
+
+Map every `404`, including structured `APP_NOT_FOUND`, to `ErrNotFound` without
+revealing whether the package is missing, unpublished, versionless, or private.
+Reject invalid base URLs, package IDs, placements, malformed JSON, oversized
+responses, and mismatched response package IDs.
+
+- [ ] **Step 5: Test query, header, combined, and error behavior**
+
+Verify the default uses only `X-Group-Codes`; query mode uses only
+`groupCodes`; combined mode uses both. Verify invalid and duplicate codes are
+removed, `404 APP_NOT_FOUND` maps to `ErrNotFound`, and codes never appear in
+errors.
+
+- [ ] **Step 6: Run and commit Task 5**
+
+Run: `go test ./appstore -run 'TestPrivateStore' -count=1`
+
+Expected: PASS.
+
+```bash
+git add appstore/private_client.go appstore/private_groups.go appstore/private_version.go appstore/private_client_test.go
+git commit -m "feat: add private app store version lookup"
+```
+
+---
+
+### Task 6: Documentation and Full Verification
 
 **Files:**
 - Modify: `README.md`
 - Modify: `README.zh-CN.md`
 
 **Interfaces:**
-- Consumes all public APIs from Tasks 1-4.
+- Consumes all public APIs from Tasks 1-5.
 - Produces documented caller examples and final verified package behavior.
 
 - [ ] **Step 1: Add the English anonymous catalog example**
@@ -441,6 +579,10 @@ fmt.Println(application.Version.Name, downloadURL)
 
 State explicitly that no login or token is required, and list homepage,
 categories, kinds, more lists, rankings, and changelog methods.
+
+Add a second example for `PrivateStoreClient` with default private group codes
+and `LatestVersion`, explaining that group codes are bearer credentials and use
+the request header by default.
 
 - [ ] **Step 2: Add the equivalent Chinese section**
 
@@ -476,12 +618,11 @@ script reports no forbidden imports; diff check prints no whitespace errors.
 
 - [ ] **Step 5: Review the public surface and commit documentation**
 
-Confirm `go doc ./appstore` shows `PublicClient` and all public response types,
-and confirm `rg -n 'Token|X-User-Token|userToken' appstore/public_*.go` finds
-only negative test assertions or documentation, never request construction.
+Confirm `go doc ./appstore/official` and `go doc ./appstore/private` show both
+client surfaces. Confirm account Token identifiers appear only in negative test
+assertions, while `X-Group-Codes` appears only in the private-store transport.
 
 ```bash
-git add README.md README.zh-CN.md appstore/public_*.go
+git add README.md README.zh-CN.md appstore/official appstore/private version docs/superpowers
 git commit -m "docs: document public app store api"
 ```
-

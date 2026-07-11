@@ -90,6 +90,8 @@ That copy runs on the developer platform. It does not require Docker on the call
 | Build images through DebugBridge | `image/buildpack`, `remote/blobcache` |
 | Log in and obtain a token | `auth`, `auth/tokenfile` |
 | Copy images and publish LPKs | `appstore` |
+| Read the official public catalog | `appstore/official` |
+| Query a Miaomiao private store | `appstore/private` |
 | Discover the local LazyCat client | `remote/shellapi` |
 | Use SSH and DebugBridge | `remote/ssh`, `remote/debugbridge` |
 | Deploy and manage an app | `project` |
@@ -668,6 +670,56 @@ An official submission usually also requires:
 - `locales` in `package.yml`.
 - A SemVer version.
 - No devshell in the submitted package.
+
+### Read application stores without a token
+
+The official catalog client is anonymous. It does not accept or construct an
+account token:
+
+```go
+client := official.New(official.Options{})
+application, err := client.Application(ctx, "wx.clawbot.lazycat.app.mediasaber")
+if err != nil {
+    return err
+}
+downloadURL, err := client.ApplicationDownloadURL(application)
+if err != nil {
+    return err
+}
+fmt.Println(application.Version.Name, downloadURL)
+```
+
+Import `github.com/lib-x/lzc-toolkit-go/appstore/official`. The package also
+provides `Homepage`, `Categories`, `Kinds`, `More`, `DownloadRanking`,
+`DeveloperRanking`, and `VersionChangelog`. Metadata and LPK base URLs can be
+overridden in `official.Options` for tests and mirrors.
+
+Miaomiao private community stores use a separate package and may expose apps
+through six-character private group codes:
+
+```go
+client, err := privatestore.New(privatestore.Options{
+    BaseURL:    "https://store.example.com",
+    GroupCodes: []string{"LATE23"},
+})
+if err != nil {
+    return err
+}
+latest, err := client.LatestVersion(ctx, privatestore.LatestVersionRequest{
+    PackageID: "community.lazycat.group-app",
+})
+if err != nil {
+    return err
+}
+fmt.Println(latest.LatestVersion.Version, latest.LatestVersion.DownloadURL)
+```
+
+Import `github.com/lib-x/lzc-toolkit-go/appstore/private` as `privatestore`.
+Group codes are bearer credentials. They are normalized, deduplicated, and sent
+through `X-Group-Codes` by default; query and combined placement are explicit
+options. The latest-version endpoint also requires no account token. Missing,
+unpublished, versionless, and inaccessible packages all return
+`lpkgo.ErrNotFound`.
 
 ## Advanced reference
 

@@ -90,6 +90,8 @@ go get github.com/lib-x/lzc-toolkit-go
 | 用 DebugBridge 远端构建镜像 | `image/buildpack`、`remote/blobcache` |
 | 账号登录和 token | `auth`、`auth/tokenfile` |
 | 镜像复制和 LPK 提交 | `appstore` |
+| 读取官方公开应用目录 | `appstore/official` |
+| 查询喵喵私有商店 | `appstore/private` |
 | 发现本机 LazyCat 客户端 | `remote/shellapi` |
 | SSH 和 DebugBridge | `remote/ssh`、`remote/debugbridge` |
 | 应用部署和生命周期 | `project` |
@@ -668,6 +670,53 @@ func main() {
 - `package.yml` 提供 `locales`。
 - 版本符合 SemVer。
 - 包中不包含 devshell。
+
+### 无需 Token 读取应用商店
+
+官方目录客户端是完全匿名的，不接收也不构造账号 Token：
+
+```go
+client := official.New(official.Options{})
+application, err := client.Application(ctx, "wx.clawbot.lazycat.app.mediasaber")
+if err != nil {
+    return err
+}
+downloadURL, err := client.ApplicationDownloadURL(application)
+if err != nil {
+    return err
+}
+fmt.Println(application.Version.Name, downloadURL)
+```
+
+导入 `github.com/lib-x/lzc-toolkit-go/appstore/official`。该包还提供
+`Homepage`、`Categories`、`Kinds`、`More`、`DownloadRanking`、
+`DeveloperRanking` 和 `VersionChangelog`。测试或使用镜像时，可以通过
+`official.Options` 覆盖元数据和 LPK 下载地址。
+
+喵喵私有商店使用独立子包，并可通过六位私有分组码开放应用：
+
+```go
+client, err := privatestore.New(privatestore.Options{
+    BaseURL:    "https://store.example.com",
+    GroupCodes: []string{"LATE23"},
+})
+if err != nil {
+    return err
+}
+latest, err := client.LatestVersion(ctx, privatestore.LatestVersionRequest{
+    PackageID: "community.lazycat.group-app",
+})
+if err != nil {
+    return err
+}
+fmt.Println(latest.LatestVersion.Version, latest.LatestVersion.DownloadURL)
+```
+
+将 `github.com/lib-x/lzc-toolkit-go/appstore/private` 导入为
+`privatestore`。分组码属于 bearer 凭据；客户端会统一转成大写、去重，
+并默认通过 `X-Group-Codes` 请求头发送，也可显式选择查询参数或两者同时
+发送。最新版本接口同样不需要账号 Token。应用不存在、未发布、没有已
+批准版本或没有分组访问权限时，都会返回 `lpkgo.ErrNotFound`。
 
 ## API 与高级能力参考
 

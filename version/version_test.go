@@ -7,7 +7,7 @@ import (
 
 func TestCurrentReferenceMetadata(t *testing.T) {
 	got := Current()
-	if got.SDKVersion != "0.1.0" {
+	if got.SDKVersion != "0.2.0" {
 		t.Fatalf("SDKVersion = %q", got.SDKVersion)
 	}
 	if got.ReferencePackage != "@lazycatcloud/lzc-cli" || got.ReferenceVersion != "2.0.8" {
