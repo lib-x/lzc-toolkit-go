@@ -1,7 +1,6 @@
 package build
 
 import (
-	"bytes"
 	"fmt"
 	"regexp"
 	"sort"
@@ -46,50 +45,83 @@ func metadataPath(resourceOnly bool, manifestPath, packagePath string) string {
 	return manifestPath
 }
 
-func parseManifestForBuild(data []byte) (*manifest.Document, bool, error) {
-	document, err := manifest.Parse(data)
-	if err == nil {
-		return document, false, nil
+func parseManifestForBuild(data []byte) (*manifest.Document, manifest.Summary, bool, error) {
+	analysis, err := manifest.Analyze(data)
+	if err != nil {
+		return nil, manifest.Summary{}, false, err
 	}
-	if !isGoTemplate(data) {
-		return nil, false, err
+	summary := analysis.Summary()
+	if !summary.Template.Present {
+		return analysis.Document(), summary, false, nil
 	}
-	values := fakeManifestValues(data)
-	compatible := map[string]any{"application": map[string]any{"subdomain": values["subdomain"]}}
-	for _, field := range []string{"package", "version", "name"} {
-		if value, exists := values[field]; exists && value != "" {
+	compatible := compatibleTemplatedManifest(summary)
+	encoded, err := yaml.Marshal(compatible)
+	if err != nil {
+		return nil, manifest.Summary{}, false, configError("build.template_manifest", "manifest.yml", err)
+	}
+	document, err := manifest.Parse(encoded)
+	return document, summary, true, err
+}
+
+func compatibleTemplatedManifest(summary manifest.Summary) map[string]any {
+	compatible := make(map[string]any)
+	for field, value := range map[string]string{
+		"package":     summary.Package.Package,
+		"version":     summary.Package.Version,
+		"name":        summary.Package.Name,
+		"description": summary.Package.Description,
+		"author":      summary.Package.Author,
+		"license":     summary.Package.License,
+		"homepage":    summary.Package.Homepage,
+	} {
+		if value != "" {
 			compatible[field] = value
 		}
 	}
-	encoded, err := yaml.Marshal(compatible)
-	if err != nil {
-		return nil, false, configError("build.template_manifest", "manifest.yml", err)
-	}
-	document, err = manifest.Parse(encoded)
-	return document, true, err
-}
-
-func isGoTemplate(data []byte) bool {
-	return bytes.Contains(data, []byte("{{")) && bytes.Contains(data, []byte("}}"))
-}
-
-func fakeManifestValues(data []byte) map[string]any {
-	values := make(map[string]any)
-	for _, line := range strings.Split(string(data), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.Count(trimmed, ":") != 1 {
-			continue
-		}
-		key, value, _ := strings.Cut(trimmed, ":")
-		if key != "package" && key != "version" && key != "name" && key != "subdomain" {
-			continue
-		}
-		value = strings.TrimSpace(strings.SplitN(value, " #", 2)[0])
-		if _, exists := values[key]; !exists && value != "" {
-			values[key] = value
+	application := map[string]any{"subdomain": summary.Application.Subdomain}
+	services := make(map[string]any)
+	for _, service := range summary.Services {
+		if _, exists := services[service.Name]; !exists {
+			services[service.Name] = map[string]any{}
 		}
 	}
-	return values
+	for _, image := range summary.Images {
+		if !image.Editable || image.RuntimeRef == "" {
+			continue
+		}
+		if image.Target == "application" {
+			application["image"] = image.RuntimeRef
+			continue
+		}
+		service, exists := services[image.Service].(map[string]any)
+		if exists {
+			service["image"] = image.RuntimeRef
+		}
+	}
+	compatible["application"] = application
+	if len(services) > 0 {
+		compatible["services"] = services
+	}
+	return compatible
+}
+
+func validateTemplateImageBuild(summary manifest.Summary) error {
+	if !summary.Template.Present {
+		return nil
+	}
+	for _, image := range summary.Images {
+		if image.Templated || image.EmbeddedAlias != "" && !image.Editable {
+			return configError("build.prepare_images", "manifest.yml", fmt.Errorf("image target %q is templated or conditional", imageTargetName(image)))
+		}
+	}
+	return nil
+}
+
+func imageTargetName(image manifest.ImageSummary) string {
+	if image.Target == "application" {
+		return "application.image"
+	}
+	return "services." + image.Service + ".image"
 }
 
 func removeTopLevelFields(data []byte, fields []string) []byte {

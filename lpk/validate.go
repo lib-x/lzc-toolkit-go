@@ -1,7 +1,6 @@
 package lpk
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -26,11 +25,15 @@ func validateWriteRequest(ctx context.Context, request WriteRequest) error {
 		if err := contextError(ctx, "lpk.validate"); err != nil {
 			return err
 		}
-		if _, err := manifest.Parse(data); err != nil {
-			if request.AllowManifestTemplate && isManifestTemplate(data) {
+		analysis, err := manifest.Analyze(data)
+		if err != nil {
+			return err
+		}
+		if analysis.Template().Present {
+			if request.AllowManifestTemplate {
 				return nil
 			}
-			return err
+			return invalidRoot("manifest template requires AllowManifestTemplate")
 		}
 		return nil
 	}
@@ -52,13 +55,17 @@ func validateWriteRequest(ctx context.Context, request WriteRequest) error {
 		if err := contextError(ctx, "lpk.validate"); err != nil {
 			return err
 		}
-		manifestDocument, err := manifest.Parse(manifestData)
+		analysis, err := manifest.Analyze(manifestData)
 		if err != nil {
-			if request.AllowManifestTemplate && isManifestTemplate(manifestData) {
-				return nil
-			}
 			return err
 		}
+		if analysis.Template().Present {
+			if request.AllowManifestTemplate {
+				return nil
+			}
+			return invalidRoot("manifest template requires AllowManifestTemplate")
+		}
+		manifestDocument := analysis.Document()
 		if request.Strict {
 			if _, err := manifest.LoadEffective(manifestDocument, packageDocument, true); err != nil {
 				return err
@@ -74,10 +81,6 @@ func validateWriteRequest(ctx context.Context, request WriteRequest) error {
 		}
 	}
 	return nil
-}
-
-func isManifestTemplate(data []byte) bool {
-	return bytes.Contains(data, []byte("{{")) && bytes.Contains(data, []byte("}}"))
 }
 
 func contextError(ctx context.Context, op string) error {

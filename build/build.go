@@ -25,6 +25,7 @@ type preparedBuild struct {
 	version   string
 	warnings  []lpkgo.Warning
 	templated bool
+	manifest  manifest.Summary
 	images    oci.Report
 	cleanup   func() error
 }
@@ -162,7 +163,7 @@ func prepare(ctx context.Context, request Request) (preparedBuild, error) {
 			return fail(preprocessErr)
 		}
 		processedManifest = processed
-		manifestDocument, prepared.templated, err = parseManifestForBuild(processed)
+		manifestDocument, prepared.manifest, prepared.templated, err = parseManifestForBuild(processed)
 		if err != nil {
 			return fail(err)
 		}
@@ -216,6 +217,9 @@ func prepare(ctx context.Context, request Request) (preparedBuild, error) {
 		return fail(configError("build.metadata", metadataPath(resourceOnly, manifestPath, packagePath), errors.New("version is required")))
 	}
 	if hasConfiguredImages(loaded.Config.Images) {
+		if err := validateTemplateImageBuild(prepared.manifest); err != nil {
+			return fail(err)
+		}
 		if request.ImageBuilder == nil {
 			return fail(&lpkgo.Error{Code: lpkgo.CodeIncompatibleBackend, Op: "build.prepare_images", Path: filepath.ToSlash(loaded.Path), Cause: errors.New("image builder is required")})
 		}

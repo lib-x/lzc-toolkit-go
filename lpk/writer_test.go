@@ -171,6 +171,22 @@ func TestWriteManifestTemplateRequiresExplicitCompatibilityOption(t *testing.T) 
 	}
 }
 
+func TestWriteRejectsMalformedManifestTemplateWithCompatibilityEnabled(t *testing.T) {
+	root := fstest.MapFS{
+		"package.yml":  &fstest.MapFile{Data: []byte("package: cloud.lazycat.apps.demo\nversion: 1.0.0\n")},
+		"manifest.yml": &fstest.MapFile{Data: []byte("application:\n  subdomain: demo\n{{ if .U.enabled }}\n  background_task: true\n")},
+	}
+	var output bytes.Buffer
+	_, err := lpk.Write(context.Background(), &output, lpk.WriteRequest{
+		Layout:                lpk.LayoutV2,
+		Files:                 root,
+		AllowManifestTemplate: true,
+	})
+	if !errors.Is(err, lpkgo.ErrInvalidManifest) || output.Len() != 0 {
+		t.Fatalf("error=%v bytes=%d", err, output.Len())
+	}
+}
+
 func TestWriteFileIsAtomicAndReportsFinalFile(t *testing.T) {
 	destination := filepath.Join(t.TempDir(), "nested", "demo.lpk")
 

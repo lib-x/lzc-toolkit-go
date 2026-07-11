@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
 	"github.com/lib-x/lzc-toolkit-go/lpk"
 	"github.com/lib-x/lzc-toolkit-go/oci"
 	"go.yaml.in/yaml/v3"
@@ -268,6 +270,99 @@ services:
 	}
 	if !bytes.Contains(data, []byte("{{if .U.multi_instance}}")) || !bytes.Contains(data, []byte("{{.U.password}}")) {
 		t.Fatalf("template was not preserved:\n%s", data)
+	}
+}
+
+func TestBuildPreservesDocumentedLazyCatTemplateForms(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "lzc-build.yml", "manifest: lzc-manifest.yml\n")
+	writeTestFile(t, root, "package.yml", "package: cloud.lazycat.apps.template-forms\nversion: 1.0.0\nname: Template Forms\n")
+	writeTestFile(t, root, "lzc-manifest.yml", `{{ if .U.target }}
+usage: "to {{ .U.target }}"
+{{ else }}
+usage: "fallback"
+{{ end }}
+application:
+  subdomain: template-forms
+  ingress:
+    - protocol: tcp
+      port: {{ index .U "listen.port" }}
+services:
+  app:
+    image: registry.lazycat.cloud/example/app:1.0.0
+    environment:
+      - URL={{if .U.base_url}}{{.U.base_url}}{{else}}https://{{.S.AppDomain}}{{end}}
+`)
+	var output bytes.Buffer
+	if _, err := Build(context.Background(), &output, Request{Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := lpk.Open(context.Background(), bytes.NewReader(output.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	entry, err := reader.OpenEntry(context.Background(), "manifest.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, readErr := io.ReadAll(entry)
+	closeErr := entry.Close()
+	if readErr != nil || closeErr != nil {
+		t.Fatalf("read=%v close=%v", readErr, closeErr)
+	}
+	for _, action := range [][]byte{
+		[]byte(`{{ if .U.target }}`),
+		[]byte(`{{ index .U "listen.port" }}`),
+		[]byte(`{{if .U.base_url}}`),
+		[]byte(`{{.S.AppDomain}}`),
+	} {
+		if !bytes.Contains(data, action) {
+			t.Fatalf("manifest is missing %q:\n%s", action, data)
+		}
+	}
+}
+
+func TestBuildRejectsConditionalEmbeddedImageBeforeBuilder(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "lzc-build.yml", "manifest: lzc-manifest.yml\nimages:\n  worker:\n    context: .\n")
+	writeTestFile(t, root, "package.yml", "package: cloud.lazycat.apps.conditional-image\nversion: 1.0.0\n")
+	writeTestFile(t, root, "lzc-manifest.yml", `application:
+  subdomain: conditional-image
+services:
+{{ if .U.worker }}
+  worker:
+    image: embed:worker
+{{ end }}
+`)
+	builder := &staticImageBuilder{artifact: newTestImageArtifact(t)}
+	_, err := Build(context.Background(), &bytes.Buffer{}, Request{Root: root, ImageBuilder: builder})
+	if !errors.Is(err, lpkgo.ErrInvalidConfig) || builder.calls != 0 {
+		t.Fatalf("error=%v builder calls=%d", err, builder.calls)
+	}
+}
+
+func TestBuildTemplatedManifestPassesStaticEmbeddedImageToBuilder(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "lzc-build.yml", "manifest: lzc-manifest.yml\nimages:\n  app:\n    context: .\n")
+	writeTestFile(t, root, "package.yml", "package: cloud.lazycat.apps.templated-image\nversion: 1.0.0\n")
+	writeTestFile(t, root, "lzc-manifest.yml", `application:
+  subdomain: templated-image
+services:
+  app:
+    image: embed:app
+    environment:
+{{ if .U.debug }}
+      - DEBUG=true
+{{ end }}
+`)
+	artifact := newTestImageArtifact(t)
+	builder := &staticImageBuilder{artifact: artifact}
+	if _, err := Build(context.Background(), &bytes.Buffer{}, Request{Root: root, ImageBuilder: builder}); err != nil {
+		t.Fatal(err)
+	}
+	if builder.calls != 1 || builder.request.Manifest.Services["app"].Image != "embed:app" {
+		t.Fatalf("builder calls=%d manifest=%#v", builder.calls, builder.request.Manifest)
 	}
 }
 
