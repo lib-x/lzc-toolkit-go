@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"go.yaml.in/yaml/v3"
 )
 
 const (
@@ -163,6 +164,21 @@ func (analysis *Analysis) Template() TemplateInfo {
 	info := analysis.template
 	info.ActionKinds = append([]string(nil), analysis.template.ActionKinds...)
 	return info
+}
+
+func nodeHasExpressionMarker(node *yaml.Node) bool {
+	if node == nil {
+		return false
+	}
+	if node.Kind == yaml.ScalarNode && strings.Contains(node.Value, templateExpressionPrefix) {
+		return true
+	}
+	for _, child := range node.Content {
+		if nodeHasExpressionMarker(child) {
+			return true
+		}
+	}
+	return false
 }
 
 // Restore replaces every projected marker with its exact original action.
