@@ -156,6 +156,44 @@ func (analysis *Analysis) Document() *Document {
 	return analysis.document.Clone()
 }
 
+// StaticScalar returns the decoded scalar at path when it has exactly one
+// unconditional, expression-free occurrence in the analyzed manifest.
+func (analysis *Analysis) StaticScalar(path ...string) (value any, found bool, err error) {
+	if analysis == nil || analysis.document == nil || analysis.document.root == nil || len(path) == 0 {
+		return nil, false, nil
+	}
+	current := documentContent(analysis.document.root)
+	for depth, component := range path {
+		if component == "" || current == nil || current.Kind != yaml.MappingNode {
+			return nil, false, nil
+		}
+		var key, next *yaml.Node
+		matches := 0
+		for _, pair := range allMappingPairs(current) {
+			if pair.key.Kind == yaml.ScalarNode && pair.key.Value == component {
+				key, next = pair.key, pair.value
+				matches++
+			}
+		}
+		if matches != 1 || analysis.lineDepth[key.Line] > 0 || analysis.lineDepth[next.Line] > 0 {
+			return nil, false, nil
+		}
+		if depth != len(path)-1 {
+			current = next
+			continue
+		}
+		resolved, ok := resolveAliasNode(next)
+		if !ok || resolved.Kind != yaml.ScalarNode || analysis.lineDepth[resolved.Line] > 0 || nodeHasExpressionMarker(next) || nodeHasExpressionMarker(resolved) {
+			return nil, false, nil
+		}
+		if err := next.Decode(&value); err != nil {
+			return nil, false, manifestYAMLError("manifest.static_scalar", "decode", err)
+		}
+		return value, true, nil
+	}
+	return nil, false, nil
+}
+
 // Template returns an independent copy of the template summary.
 func (analysis *Analysis) Template() TemplateInfo {
 	if analysis == nil {

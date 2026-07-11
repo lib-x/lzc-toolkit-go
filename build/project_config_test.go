@@ -1,6 +1,7 @@
 package build
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"path/filepath"
@@ -83,6 +84,84 @@ func TestResolveConfigPreservesStaticEmptyManifestPackageValue(t *testing.T) {
 	}
 	if resolved.Loaded.Config.ContentDir != "" {
 		t.Fatalf("ContentDir = %q", resolved.Loaded.Config.ContentDir)
+	}
+}
+
+func TestResolveConfigCoercesStaticManifestScalars(t *testing.T) {
+	tests := []struct {
+		name        string
+		key         string
+		manifest    string
+		environment string
+		want        string
+	}{
+		{name: "null", key: "package", manifest: "package: null\n", environment: "fallback", want: ""},
+		{name: "bool", key: "version", manifest: "version: true\n", environment: "fallback", want: "true"},
+		{name: "int", key: "name", manifest: "name: 42\n", environment: "fallback", want: "42"},
+		{name: "unsigned compatible integer", key: "subdomain", manifest: "application:\n  subdomain: 18446744073709551615\n", environment: "fallback", want: "18446744073709551615"},
+		{name: "float", key: "description", manifest: "description: 1.25\n", environment: "fallback", want: "1.25"},
+		{name: "quoted string", key: "license", manifest: "license: 'Apache-2.0'\n", environment: "fallback", want: "Apache-2.0"},
+		{name: "templated", key: "package", manifest: "package: '{{ .Package }}'\n", environment: "fallback", want: "fallback"},
+		{name: "conditional", key: "package", manifest: "{{ if .UsePackage }}\npackage: 42\n{{ end }}\n", environment: "fallback", want: "fallback"},
+		{name: "static with unrelated template", key: "package", manifest: "package: 42\n{{ if .Worker }}\nservices: {}\n{{ end }}\n", environment: "fallback", want: "42"},
+		{name: "ambiguous", key: "version", manifest: "version: first\nversion: second\n", environment: "fallback", want: "fallback"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeTestFile(t, root, "lzc-build.yml", "contentdir: ${"+test.key+"}\n")
+			writeTestFile(t, root, "lzc-manifest.yml", test.manifest)
+
+			resolved, err := ResolveConfig(context.Background(), ConfigRequest{
+				Root:        root,
+				Environment: map[string]string{test.key: test.environment},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resolved.Loaded.Config.ContentDir != test.want {
+				t.Fatalf("ContentDir = %q, want %q", resolved.Loaded.Config.ContentDir, test.want)
+			}
+		})
+	}
+}
+
+func TestResolveConfigAndBuildWrapMalformedPlainManifestAsInvalidConfig(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "lzc-build.yml", "contentdir: content\n")
+	manifestPath := filepath.Join(root, "lzc-manifest.yml")
+	writeTestFile(t, root, "lzc-manifest.yml", "package: [unterminated\n")
+
+	operations := []struct {
+		name string
+		run  func() error
+	}{
+		{name: "resolve config", run: func() error {
+			_, err := ResolveConfig(context.Background(), ConfigRequest{Root: root})
+			return err
+		}},
+		{name: "build", run: func() error {
+			_, err := Build(context.Background(), &bytes.Buffer{}, Request{Root: root})
+			return err
+		}},
+	}
+	for _, operation := range operations {
+		t.Run(operation.name, func(t *testing.T) {
+			err := operation.run()
+			var structured *lpkgo.Error
+			if !errors.As(err, &structured) {
+				t.Fatalf("error = %#v", err)
+			}
+			if structured.Code != lpkgo.CodeInvalidConfig || structured.Op != "build.template_manifest" || structured.Path != filepath.ToSlash(manifestPath) {
+				t.Fatalf("error = %#v", structured)
+			}
+			if structured.Cause == nil || structured.Cause.Error() != "yaml: line 1: did not find expected ',' or ']'" {
+				t.Fatalf("cause = %v", structured.Cause)
+			}
+			if err.Error() != string(lpkgo.CodeInvalidConfig) {
+				t.Fatalf("error text = %q", err.Error())
+			}
+		})
 	}
 }
 

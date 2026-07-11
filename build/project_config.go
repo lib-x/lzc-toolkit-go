@@ -114,33 +114,37 @@ func loadStaticPackageValues(ctx context.Context, root string, loaded LoadedConf
 		}
 		analysis, analyzeErr := manifest.Analyze(data)
 		if analyzeErr != nil {
+			if !isGoTemplate(data) {
+				var raw map[string]any
+				if yamlErr := yaml.Unmarshal(data, &raw); yamlErr != nil {
+					return nil, configError("build.template_manifest", manifestPath, yamlErr)
+				}
+			}
 			return nil, analyzeErr
 		}
-		summary := analysis.Summary()
-		templated := make(map[string]struct{})
-		for _, diagnostic := range summary.Diagnostics {
-			if diagnostic.Code == "TEMPLATED_FIELD" {
-				templated[diagnostic.Path] = struct{}{}
-			}
+		fields := []struct {
+			key  string
+			path []string
+		}{
+			{key: "package", path: []string{"package"}},
+			{key: "version", path: []string{"version"}},
+			{key: "name", path: []string{"name"}},
+			{key: "description", path: []string{"description"}},
+			{key: "author", path: []string{"author"}},
+			{key: "license", path: []string{"license"}},
+			{key: "homepage", path: []string{"homepage"}},
+			{key: "min_os_version", path: []string{"min_os_version"}},
+			{key: "subdomain", path: []string{"application", "subdomain"}},
 		}
-		document := analysis.Document()
-		for key, value := range map[string]string{
-			"package":        summary.Package.Package,
-			"version":        summary.Package.Version,
-			"name":           summary.Package.Name,
-			"description":    summary.Package.Description,
-			"author":         summary.Package.Author,
-			"license":        summary.Package.License,
-			"homepage":       summary.Package.Homepage,
-			"min_os_version": summary.Package.MinOSVersion,
-		} {
-			if _, dynamic := templated[key]; dynamic {
-				continue
-			}
-			if _, found, lookupErr := document.Lookup(key); lookupErr != nil {
+		for _, field := range fields {
+			value, found, lookupErr := analysis.StaticScalar(field.path...)
+			if lookupErr != nil {
 				return nil, lookupErr
-			} else if found {
-				values[key] = value
+			}
+			if found {
+				if stringValue, ok := stringifyTemplateScalar(value); ok {
+					values[field.key] = stringValue
+				}
 			}
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -167,6 +171,19 @@ func loadStaticPackageValues(ctx context.Context, root string, loaded LoadedConf
 		return nil, buildPathError("build.template_package", packagePath, err)
 	}
 	return values, nil
+}
+
+func stringifyTemplateScalar(value any) (string, bool) {
+	switch typed := value.(type) {
+	case nil:
+		return "", true
+	case string:
+		return typed, true
+	case bool, int, int64, uint64, float64:
+		return fmt.Sprint(typed), true
+	default:
+		return "", false
+	}
 }
 
 func cloneLoadedConfig(source LoadedConfig) LoadedConfig {
