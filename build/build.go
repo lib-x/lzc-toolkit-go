@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/internal/packageid"
 	"github.com/lib-x/lzc-toolkit-go/lpk"
 	"github.com/lib-x/lzc-toolkit-go/manifest"
 	"github.com/lib-x/lzc-toolkit-go/oci"
@@ -90,44 +91,26 @@ func prepare(ctx context.Context, request Request) (preparedBuild, error) {
 	if err := checkContext(ctx, "build.prepare"); err != nil {
 		return preparedBuild{}, err
 	}
-	root, err := resolveRoot(request.Root)
+	configEnvironment := cloneStringMap(request.Environment)
+	if request.LocalIP != "" {
+		configEnvironment["LocalIP"] = request.LocalIP
+	}
+	resolved, err := ResolveConfig(ctx, ConfigRequest{
+		Root:               request.Root,
+		ConfigFile:         request.ConfigFile,
+		Environment:        configEnvironment,
+		InheritEnvironment: request.InheritEnvironment,
+	})
 	if err != nil {
 		return preparedBuild{}, err
 	}
-	environment := buildEnvironment(request)
-	loaded, err := LoadConfig(ctx, root, request.ConfigFile, environment)
-	if err != nil {
-		return preparedBuild{}, err
-	}
-	baseTemplateEnv := cloneStringMap(environment)
-	templateValues, err := loadManifestTemplateValues(root, loaded.Config)
-	if err != nil {
-		return preparedBuild{}, err
-	}
-	for key, value := range templateValues {
-		baseTemplateEnv[key] = value
-	}
-	firstPass, err := LoadConfig(ctx, root, request.ConfigFile, baseTemplateEnv)
-	if err != nil {
-		return preparedBuild{}, err
-	}
-	finalTemplateEnv := cloneStringMap(baseTemplateEnv)
-	for key, value := range firstPass.BuildEnv {
-		finalTemplateEnv[key] = value
-	}
-	loaded, err = LoadConfig(ctx, root, request.ConfigFile, finalTemplateEnv)
-	if err != nil {
-		return preparedBuild{}, err
-	}
-	if err := rejectRemovedOptions(loaded); err != nil {
-		return preparedBuild{}, err
-	}
+	root, loaded := resolved.Root, resolved.Loaded
 	if request.RunBuildScript && strings.TrimSpace(loaded.Config.BuildScript) != "" {
 		runner := request.Runner
 		if runner == nil {
 			runner = ShellRunner{}
 		}
-		commandEnv := cloneStringMap(environment)
+		commandEnv := buildEnvironment(request)
 		for key, value := range loaded.BuildEnv {
 			commandEnv[key] = value
 		}
@@ -226,7 +209,7 @@ func prepare(ctx context.Context, request Request) (preparedBuild, error) {
 			return fail(configError("build.manifest", manifestPath, errors.New("application.subdomain is required")))
 		}
 	}
-	if !packageNamePattern.MatchString(prepared.packageID) {
+	if !packageid.Valid(prepared.packageID) {
 		return fail(configError("build.metadata", metadataPath(resourceOnly, manifestPath, packagePath), fmt.Errorf("invalid package name %q", prepared.packageID)))
 	}
 	if prepared.version == "" {
@@ -270,7 +253,7 @@ func prepare(ctx context.Context, request Request) (preparedBuild, error) {
 		}
 	}
 
-	prepared.layout = selectLayout(request, loaded, packageExists, resourceOnly)
+	prepared.layout = PredictLayout(request.ForceV2, loaded, packageExists, resourceOnly)
 	if prepared.layout == lpk.LayoutV1 {
 		data := processedManifest
 		if !prepared.templated {

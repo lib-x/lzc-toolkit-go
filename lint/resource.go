@@ -8,12 +8,12 @@ import (
 	"strings"
 
 	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/internal/packageid"
 	manifestpkg "github.com/lib-x/lzc-toolkit-go/manifest"
 )
 
 const maxResourceExportKinds = 100
 
-var packageNamePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*(\.[a-z][a-z0-9]*(-[a-z0-9]+)*)*$`)
 var resourceExportNamePattern = regexp.MustCompile(`^[a-z0-9._-]+$`)
 
 var errResourcePayloadFound = errors.New("resource payload found")
@@ -77,7 +77,7 @@ func lintResourcePackageFile(ctx context.Context, root fs.FS) ([]lpkgo.Warning, 
 	}
 
 	warnings := make([]lpkgo.Warning, 0, 2)
-	if !packageNamePattern.MatchString(packageInfo.Package) {
+	if !packageid.Valid(packageInfo.Package) {
 		warnings = append(warnings, resourceWarning("resource-package-name-invalid", "package.yml.package", "package.yml package must be a valid package name."))
 	}
 	if strings.TrimSpace(packageInfo.Version) == "" {

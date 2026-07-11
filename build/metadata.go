@@ -2,10 +2,7 @@ package build
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -14,8 +11,6 @@ import (
 	"github.com/lib-x/lzc-toolkit-go/oci"
 	"go.yaml.in/yaml/v3"
 )
-
-var packageNamePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*(\.[a-z][a-z0-9]*(-[a-z0-9]+)*)*$`)
 
 func applyMetadataOverrides(document *manifest.Document, config Config, versionOverride string) error {
 	overrides := cloneMap(config.PackageOverride)
@@ -49,47 +44,6 @@ func metadataPath(resourceOnly bool, manifestPath, packagePath string) string {
 		return packagePath
 	}
 	return manifestPath
-}
-
-func loadManifestTemplateValues(root string, config Config) (map[string]string, error) {
-	manifestName := strings.TrimSpace(config.Manifest)
-	if manifestName == "" {
-		manifestName = "lzc-manifest.yml"
-	}
-	values := make(map[string]any)
-	manifestPath := resolveProjectPath(root, manifestName)
-	if data, err := os.ReadFile(manifestPath); err == nil {
-		if err := yaml.Unmarshal(data, &values); err != nil {
-			if !isGoTemplate(data) {
-				return nil, configError("build.template_manifest", manifestPath, err)
-			}
-			values = fakeManifestValues(data)
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, buildPathError("build.template_manifest", manifestPath, err)
-	}
-	packagePath := filepath.Join(root, "package.yml")
-	if data, err := os.ReadFile(packagePath); err == nil {
-		var packageValues map[string]any
-		if err := yaml.Unmarshal(data, &packageValues); err != nil {
-			return nil, configError("build.template_package", packagePath, err)
-		}
-		mergeTopLevel(values, packageValues)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, buildPathError("build.template_package", packagePath, err)
-	}
-	result := make(map[string]string, len(values))
-	for key, value := range values {
-		switch typed := value.(type) {
-		case nil:
-			result[key] = ""
-		case string:
-			result[key] = typed
-		case bool, int, int64, uint64, float64:
-			result[key] = fmt.Sprint(typed)
-		}
-	}
-	return result, nil
 }
 
 func parseManifestForBuild(data []byte) (*manifest.Document, bool, error) {

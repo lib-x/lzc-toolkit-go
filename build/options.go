@@ -6,35 +6,16 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 
 	lpkgo "github.com/lib-x/lzc-toolkit-go"
-	"github.com/lib-x/lzc-toolkit-go/lpk"
 )
 
 func buildEnvironment(request Request) map[string]string {
-	environment := make(map[string]string)
-	if request.InheritEnvironment {
-		for _, entry := range os.Environ() {
-			if equal := strings.IndexByte(entry, '='); equal > 0 {
-				environment[entry[:equal]] = entry[equal+1:]
-			}
-		}
-	}
-	for key, value := range request.Environment {
-		environment[key] = value
-	}
+	environment := collectEnvironment(request.InheritEnvironment, request.Environment)
 	if request.LocalIP != "" {
 		environment["LocalIP"] = request.LocalIP
 	}
 	return environment
-}
-
-func selectLayout(request Request, loaded LoadedConfig, packageExists, resourceOnly bool) lpk.Layout {
-	if request.ForceV2 || packageExists || loaded.Config.Images != nil || len(loaded.Config.Envs) > 0 || len(loaded.Config.PackageOverride) > 0 || loaded.Config.PackageID != nil || loaded.Config.PackageName != nil || resourceOnly {
-		return lpk.LayoutV2
-	}
-	return lpk.LayoutV1
 }
 
 func hasConfiguredImages(value any) bool {
