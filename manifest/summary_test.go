@@ -114,6 +114,77 @@ usage: advanced
 	}
 }
 
+func TestSummaryDoesNotGuessConditionalOrDuplicateIdentityFields(t *testing.T) {
+	analysis, err := Analyze([]byte(`{{ if .U.community }}
+package: community.lazycat.app.one
+version: 1.0.0
+name: One
+description: First
+author: First Author
+license: MIT
+homepage: https://one.example
+min_os_version: 1.3.8
+{{ else }}
+package: community.lazycat.app.two
+version: 2.0.0
+name: Two
+description: Second
+author: Second Author
+license: Apache-2.0
+homepage: https://two.example
+min_os_version: 1.4.0
+{{ end }}
+application:
+{{ if .U.primary }}
+  subdomain: one
+{{ else }}
+  subdomain: two
+{{ end }}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary := analysis.Summary()
+	if summary.Package.Package != "" || summary.Package.Version != "" || summary.Package.Name != "" ||
+		summary.Package.Description != "" || summary.Package.Author != "" || summary.Package.License != "" ||
+		summary.Package.Homepage != "" || summary.Package.MinOSVersion != "" || summary.Application.Subdomain != "" {
+		t.Fatalf("summary guessed ambiguous identity fields: %#v / %#v", summary.Package, summary.Application)
+	}
+	for _, path := range []string{"package", "version", "name", "description", "author", "license", "homepage", "min_os_version", "application.subdomain"} {
+		if !hasDiagnostic(summary.Diagnostics, "TEMPLATED_FIELD", path) {
+			t.Fatalf("Diagnostics missing TEMPLATED_FIELD for %q: %#v", path, summary.Diagnostics)
+		}
+	}
+}
+
+func TestSummaryDoesNotExposeTemplatedUpstreamComments(t *testing.T) {
+	const actionKind = ".U.upstream_image"
+	analysis, err := Analyze([]byte(`services:
+  api:
+    # upstream: {{ ` + actionKind + ` }}
+    image: registry.lazycat.cloud/example/api:abc123
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary := analysis.Summary()
+	if len(summary.Images) != 1 || summary.Images[0].UpstreamRef != "" {
+		t.Fatalf("Images = %#v", summary.Images)
+	}
+	if !hasDiagnostic(summary.Diagnostics, "TEMPLATED_FIELD", "services.api.image.upstreamRef") {
+		t.Fatalf("Diagnostics = %#v", summary.Diagnostics)
+	}
+	encoded, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, private := range []string{templateExpressionPrefix, templateControlPrefix, actionKind, "{{ " + actionKind + " }}"} {
+		if strings.Contains(string(encoded), private) {
+			t.Fatalf("summary exposed %q: %s", private, encoded)
+		}
+	}
+}
+
 func TestSummaryMarksDuplicateConditionalServiceAsAmbiguous(t *testing.T) {
 	analysis, err := Analyze([]byte(`services:
 {{ if .U.v1 }}

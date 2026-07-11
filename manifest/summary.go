@@ -85,8 +85,15 @@ type Summary struct {
 type summaryBuilder struct {
 	analysis    *Analysis
 	summary     Summary
+	identities  map[string][]identityOccurrence
 	serviceSeen map[string]int
 	imageSeen   map[string]int
+}
+
+type identityOccurrence struct {
+	value       string
+	static      bool
+	conditional bool
 }
 
 // Summary extracts static, normalized facts from the projected manifest.
@@ -98,10 +105,11 @@ func (analysis *Analysis) Summary() Summary {
 	}
 	builder := summaryBuilder{
 		analysis:    analysis,
+		identities:  make(map[string][]identityOccurrence),
 		serviceSeen: make(map[string]int),
 		imageSeen:   make(map[string]int),
 	}
-	builder.summary.Template = analysis.Template()
+	builder.summary.Template = summaryTemplateInfo(analysis.Template())
 	builder.extract(documentContent(analysis.document.root))
 	builder.finish()
 	return cloneSummary(builder.summary)
@@ -114,21 +122,21 @@ func (builder *summaryBuilder) extract(root *yaml.Node) {
 	for _, pair := range allMappingPairs(root) {
 		switch pair.key.Value {
 		case "package":
-			builder.setPackageString(&builder.summary.Package.Package, pair.value, "package")
+			builder.recordIdentity("package", pair.key, pair.value)
 		case "version":
-			builder.setPackageString(&builder.summary.Package.Version, pair.value, "version")
+			builder.recordIdentity("version", pair.key, pair.value)
 		case "name":
-			builder.setPackageString(&builder.summary.Package.Name, pair.value, "name")
+			builder.recordIdentity("name", pair.key, pair.value)
 		case "description":
-			builder.setPackageString(&builder.summary.Package.Description, pair.value, "description")
+			builder.recordIdentity("description", pair.key, pair.value)
 		case "author":
-			builder.setPackageString(&builder.summary.Package.Author, pair.value, "author")
+			builder.recordIdentity("author", pair.key, pair.value)
 		case "license":
-			builder.setPackageString(&builder.summary.Package.License, pair.value, "license")
+			builder.recordIdentity("license", pair.key, pair.value)
 		case "homepage":
-			builder.setPackageString(&builder.summary.Package.Homepage, pair.value, "homepage")
+			builder.recordIdentity("homepage", pair.key, pair.value)
 		case "min_os_version":
-			builder.setPackageString(&builder.summary.Package.MinOSVersion, pair.value, "min_os_version")
+			builder.recordIdentity("min_os_version", pair.key, pair.value)
 		case "unsupported_platforms":
 			if values, ok := staticStringList(pair.value); ok {
 				builder.summary.Package.UnsupportedPlatforms = append(builder.summary.Package.UnsupportedPlatforms, values...)
@@ -150,15 +158,13 @@ func (builder *summaryBuilder) extract(root *yaml.Node) {
 	}
 }
 
-func (builder *summaryBuilder) setPackageString(target *string, node *yaml.Node, path string) {
-	if *target != "" {
-		return
-	}
-	if value, ok := staticString(node); ok {
-		*target = value
-	} else if nodeHasExpressionMarker(node) {
-		builder.templatedField(path)
-	}
+func (builder *summaryBuilder) recordIdentity(path string, key *yaml.Node, value *yaml.Node) {
+	staticValue, static := staticString(value)
+	builder.identities[path] = append(builder.identities[path], identityOccurrence{
+		value:       staticValue,
+		static:      static,
+		conditional: builder.conditional(key, value),
+	})
 }
 
 func (builder *summaryBuilder) extractLocales(node *yaml.Node) {
@@ -179,13 +185,7 @@ func (builder *summaryBuilder) extractApplication(node *yaml.Node) {
 	for _, pair := range allMappingPairs(node) {
 		switch pair.key.Value {
 		case "subdomain":
-			if builder.summary.Application.Subdomain == "" {
-				if value, ok := staticString(pair.value); ok {
-					builder.summary.Application.Subdomain = value
-				} else if nodeHasExpressionMarker(pair.value) {
-					builder.templatedField("application.subdomain")
-				}
-			}
+			builder.recordIdentity("application.subdomain", pair.key, pair.value)
 		case "image":
 			builder.summary.Application.HasImage = true
 			builder.addImage("application.image", "", pair.key, pair.value, builder.conditional(pair.key, pair.value))
@@ -269,11 +269,12 @@ func (builder *summaryBuilder) extractServices(node *yaml.Node) {
 func (builder *summaryBuilder) addImage(target string, service string, key *yaml.Node, value *yaml.Node, conditional bool) {
 	templated := nodeHasExpressionMarker(value)
 	runtimeRef, _ := staticString(value)
+	upstreamRef, templatedUpstream := upstreamComment(key, value)
 	image := ImageSummary{
 		Target:        target,
 		Service:       service,
 		RuntimeRef:    runtimeRef,
-		UpstreamRef:   upstreamComment(key, value),
+		UpstreamRef:   upstreamRef,
 		EmbeddedAlias: embeddedAlias(runtimeRef),
 		Templated:     templated,
 		Conditional:   conditional,
@@ -286,6 +287,9 @@ func (builder *summaryBuilder) addImage(target string, service string, key *yaml
 	if conditional {
 		image.Reason = appendReason(image.Reason, "image field is conditional")
 		builder.addDiagnostic(SeverityWarning, "CONDITIONAL_IMAGE", target, "image field is inside a conditional template block")
+	}
+	if templatedUpstream {
+		builder.addDiagnostic(SeverityWarning, "TEMPLATED_FIELD", target+".upstreamRef", "upstream reference comment contains a template expression")
 	}
 	builder.imageSeen[target]++
 	builder.summary.Images = append(builder.summary.Images, image)
@@ -309,6 +313,7 @@ func (builder *summaryBuilder) addDiagnostic(severity Severity, code string, pat
 }
 
 func (builder *summaryBuilder) finish() {
+	builder.resolveIdentities()
 	for name, count := range builder.serviceSeen {
 		if count > 1 {
 			builder.addDiagnostic(SeverityWarning, "DUPLICATE_SERVICE", "services."+name, "service is defined more than once")
@@ -366,6 +371,31 @@ func (builder *summaryBuilder) finish() {
 		}
 		return left.Message < right.Message
 	})
+}
+
+func (builder *summaryBuilder) resolveIdentities() {
+	targets := map[string]*string{
+		"package":               &builder.summary.Package.Package,
+		"version":               &builder.summary.Package.Version,
+		"name":                  &builder.summary.Package.Name,
+		"description":           &builder.summary.Package.Description,
+		"author":                &builder.summary.Package.Author,
+		"license":               &builder.summary.Package.License,
+		"homepage":              &builder.summary.Package.Homepage,
+		"min_os_version":        &builder.summary.Package.MinOSVersion,
+		"application.subdomain": &builder.summary.Application.Subdomain,
+	}
+	for path, target := range targets {
+		occurrences := builder.identities[path]
+		if len(occurrences) == 0 {
+			continue
+		}
+		if len(occurrences) == 1 && occurrences[0].static && !occurrences[0].conditional {
+			*target = occurrences[0].value
+			continue
+		}
+		builder.templatedField(path)
+	}
 }
 
 type yamlPair struct {
@@ -514,7 +544,7 @@ func validSHA256Digest(value string) bool {
 	return true
 }
 
-func upstreamComment(nodes ...*yaml.Node) string {
+func upstreamComment(nodes ...*yaml.Node) (string, bool) {
 	for _, node := range nodes {
 		if node == nil {
 			continue
@@ -526,12 +556,27 @@ func upstreamComment(nodes ...*yaml.Node) string {
 					continue
 				}
 				if reference := strings.TrimSpace(strings.TrimPrefix(line, "upstream:")); reference != "" {
-					return reference
+					if strings.Contains(reference, templateExpressionPrefix) || strings.Contains(reference, templateControlPrefix) {
+						return "", true
+					}
+					return reference, false
 				}
 			}
 		}
 	}
-	return ""
+	return "", false
+}
+
+func summaryTemplateInfo(info TemplateInfo) TemplateInfo {
+	kinds := make([]string, 0, len(info.ActionKinds))
+	for _, kind := range info.ActionKinds {
+		if strings.HasPrefix(kind, ".") || strings.HasPrefix(kind, "$") {
+			kind = "expression"
+		}
+		kinds = append(kinds, kind)
+	}
+	info.ActionKinds = sortedUnique(kinds)
+	return info
 }
 
 func appendReason(existing string, reason string) string {
