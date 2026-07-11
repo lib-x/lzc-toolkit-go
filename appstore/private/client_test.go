@@ -125,3 +125,26 @@ func TestClientRejectsInvalidConfigurationAndPackage(t *testing.T) {
 		t.Fatalf("package err=%v", err)
 	}
 }
+
+func TestClientDoesNotForwardGroupCodesAcrossRedirects(t *testing.T) {
+	var redirected bool
+	target := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		redirected = true
+	}))
+	defer target.Close()
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		http.Redirect(w, request, target.URL, http.StatusFound)
+	}))
+	defer source.Close()
+	client, err := private.New(private.Options{BaseURL: source.URL, HTTPClient: source.Client(), GroupCodes: []string{"ABC123"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.LatestVersion(context.Background(), private.LatestVersionRequest{PackageID: "community.lazycat.app"})
+	if !errors.Is(err, lpkgo.ErrRemoteUnavailable) {
+		t.Fatalf("err=%v", err)
+	}
+	if redirected {
+		t.Fatal("redirect target was contacted")
+	}
+}

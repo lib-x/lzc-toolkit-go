@@ -160,7 +160,7 @@ func officialError(code lpkgo.Code, op string, cause error, status int) error {
 		Code:       code,
 		Op:         op,
 		StatusCode: status,
-		Retryable:  status == 0 || status >= 500,
+		Retryable:  code == lpkgo.CodeRemoteUnavailable && (status == 0 || status >= 500),
 		Cause:      cause,
 	}
 }

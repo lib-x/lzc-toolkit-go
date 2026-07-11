@@ -40,16 +40,20 @@ func New(options Options) (*Client, error) {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
+	isolatedHTTPClient := *httpClient
+	isolatedHTTPClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
 	return &Client{
 		baseURL:            baseURL,
-		httpClient:         httpClient,
+		httpClient:         &isolatedHTTPClient,
 		groupCodes:         normalizeGroupCodes(options.GroupCodes),
 		groupCodePlacement: options.GroupCodePlacement,
 	}, nil
 }
 
 func privateError(code lpkgo.Code, op string, cause error, status int) error {
-	return &lpkgo.Error{Code: code, Op: op, StatusCode: status, Retryable: status == 0 || status >= 500, Cause: cause}
+	return &lpkgo.Error{Code: code, Op: op, StatusCode: status, Retryable: code == lpkgo.CodeRemoteUnavailable && (status == 0 || status >= 500), Cause: cause}
 }
 
 func parseBaseURL(value string) (*url.URL, error) {
