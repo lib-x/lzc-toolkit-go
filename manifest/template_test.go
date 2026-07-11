@@ -2,6 +2,7 @@ package manifest_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -311,8 +312,30 @@ value: fallback
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{".U.value", "else", "end", "if", "index", "stable_secret"}
+	want := []string{"else", "end", "expression", "if", "index", "stable_secret"}
 	if got := analysis.Template().ActionKinds; !slices.Equal(got, want) {
 		t.Fatalf("Template().ActionKinds = %#v, want %#v", got, want)
+	}
+}
+
+func TestAnalyzeActionKindsNeverExposeLiteralTokens(t *testing.T) {
+	t.Parallel()
+	source := []byte("string: {{ \"private.registry/internal/image:secret-tag\" }}\nnumber: {{ 8675309 }}\nraw: {{ `private-raw-literal` }}\ncharacter: {{ 'x' }}\nvariable: {{ $private }}\npath: {{ .U.private }}\nparenthesized: {{ (index .U \"port\") }}\nknown: {{ index .U \"port\" }}-{{ stable_secret \"name\" }}\n")
+	analysis, err := manifest.Analyze(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"expression", "index", "stable_secret"}
+	if got := analysis.Template().ActionKinds; !slices.Equal(got, want) {
+		t.Fatalf("Template().ActionKinds = %#v, want %#v", got, want)
+	}
+	encoded, err := json.Marshal(analysis.Template())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, private := range []string{"private.registry/internal/image:secret-tag", "8675309", "private-raw-literal", "$private", ".U.private", "(index"} {
+		if bytes.Contains(encoded, []byte(private)) {
+			t.Fatalf("Template() exposed %q: %s", private, encoded)
+		}
 	}
 }

@@ -109,7 +109,7 @@ func (analysis *Analysis) Summary() Summary {
 		serviceSeen: make(map[string]int),
 		imageSeen:   make(map[string]int),
 	}
-	builder.summary.Template = summaryTemplateInfo(analysis.Template())
+	builder.summary.Template = analysis.Template()
 	builder.extract(documentContent(analysis.document.root))
 	builder.finish()
 	return cloneSummary(builder.summary)
@@ -565,18 +565,6 @@ func upstreamComment(nodes ...*yaml.Node) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-func summaryTemplateInfo(info TemplateInfo) TemplateInfo {
-	kinds := make([]string, 0, len(info.ActionKinds))
-	for _, kind := range info.ActionKinds {
-		if strings.HasPrefix(kind, ".") || strings.HasPrefix(kind, "$") {
-			kind = "expression"
-		}
-		kinds = append(kinds, kind)
-	}
-	info.ActionKinds = sortedUnique(kinds)
-	return info
 }
 
 func appendReason(existing string, reason string) string {

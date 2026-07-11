@@ -315,10 +315,27 @@ func actionIsStandalone(data []byte, start int, end int) bool {
 }
 
 func actionKind(action []byte) string {
-	if fields := templateActionFields(action); len(fields) != 0 {
+	if fields := templateActionFields(action); len(fields) != 0 && safeActionKind(fields[0]) {
 		return fields[0]
 	}
 	return "expression"
+}
+
+func safeActionKind(kind string) bool {
+	if kind == "" || (!asciiLetter(kind[0]) && kind[0] != '_') {
+		return false
+	}
+	for index := 1; index < len(kind); index++ {
+		if asciiLetter(kind[index]) || kind[index] == '_' || (kind[index] >= '0' && kind[index] <= '9') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func asciiLetter(value byte) bool {
+	return value >= 'A' && value <= 'Z' || value >= 'a' && value <= 'z'
 }
 
 func isChainedElse(action []byte) bool {

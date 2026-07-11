@@ -185,6 +185,35 @@ func TestSummaryDoesNotExposeTemplatedUpstreamComments(t *testing.T) {
 	}
 }
 
+func TestSummaryTemplateKindsNeverExposeLiteralTokens(t *testing.T) {
+	analysis, err := Analyze([]byte(`application:
+  image: {{ "private.registry/internal/image:secret-tag" }}
+services:
+  api:
+    image: {{ 8675309 }}
+  worker:
+    image: {{ stable_secret "worker-image" }}
+  indexed:
+    image: {{ index .U "image" }}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary := analysis.Summary()
+	if want := []string{"expression", "index", "stable_secret"}; !reflect.DeepEqual(summary.Template.ActionKinds, want) {
+		t.Fatalf("Summary().Template.ActionKinds = %#v, want %#v", summary.Template.ActionKinds, want)
+	}
+	encoded, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, private := range []string{"private.registry/internal/image:secret-tag", "8675309", "worker-image", ".U"} {
+		if strings.Contains(string(encoded), private) {
+			t.Fatalf("Summary() exposed %q: %s", private, encoded)
+		}
+	}
+}
+
 func TestSummaryMarksDuplicateConditionalServiceAsAmbiguous(t *testing.T) {
 	analysis, err := Analyze([]byte(`services:
 {{ if .U.v1 }}
