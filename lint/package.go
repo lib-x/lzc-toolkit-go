@@ -32,7 +32,7 @@ func Package(ctx context.Context, root fs.FS, optionValues ...Option) ([]lpkgo.W
 	}
 
 	options := applyOptions(optionValues)
-	manifestDocument, err := readRequiredPackageDocument(ctx, root, "manifest.yml")
+	manifestDocument, err := readRequiredManifestDocument(ctx, root)
 	if err != nil {
 		return nil, err
 	}
@@ -65,6 +65,28 @@ func Package(ctx context.Context, root fs.FS, optionValues ...Option) ([]lpkgo.W
 	}
 	warnings = append(warnings, manifestWarnings...)
 	return warnings, nil
+}
+
+func readRequiredManifestDocument(ctx context.Context, root fs.FS) (*manifest.Document, error) {
+	if err := lintContextError(ctx, "lint.package"); err != nil {
+		return nil, err
+	}
+	info, err := fs.Stat(root, "manifest.yml")
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, packageLintError("manifest.yml", err)
+	}
+	data, err := fs.ReadFile(root, "manifest.yml")
+	if err != nil {
+		return nil, packageLintError("manifest.yml", err)
+	}
+	if err := lintContextError(ctx, "lint.package"); err != nil {
+		return nil, err
+	}
+	analysis, err := manifest.Analyze(data)
+	if err != nil {
+		return nil, err
+	}
+	return analysis.Document(), nil
 }
 
 func optionsFromStruct(value options) []Option {

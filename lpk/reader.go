@@ -249,7 +249,7 @@ func (r *Reader) manifestDocument(ctx context.Context) (*manifest.Document, erro
 	if r.manifestCache.loaded {
 		return r.manifestCache.document, r.manifestCache.err
 	}
-	document, err := r.readDocument(ctx, "manifest.yml", "lpk.manifest")
+	document, err := r.readManifestDocument(ctx, "lpk.manifest")
 	if errors.Is(err, fs.ErrNotExist) {
 		err = containerError(lpkgo.CodeNotFound, "lpk.manifest", err)
 	}
@@ -280,7 +280,7 @@ func (r *Reader) packageDocument(ctx context.Context) (*manifest.Document, error
 
 	manifestDocument := r.manifestCache.document
 	if !r.manifestCache.loaded {
-		manifestDocument, err = r.readDocument(ctx, "manifest.yml", "lpk.manifest")
+		manifestDocument, err = r.readManifestDocument(ctx, "lpk.manifest")
 		if errors.Is(err, fs.ErrNotExist) {
 			err = containerError(lpkgo.CodeNotFound, "lpk.manifest", err)
 		}
@@ -299,6 +299,18 @@ func (r *Reader) readDocument(ctx context.Context, name string, op string) (*man
 		return nil, err
 	}
 	return manifest.Parse(data)
+}
+
+func (r *Reader) readManifestDocument(ctx context.Context, op string) (*manifest.Document, error) {
+	data, err := r.readEntryBytes(ctx, "manifest.yml", op)
+	if err != nil {
+		return nil, err
+	}
+	analysis, err := manifest.Analyze(data)
+	if err != nil {
+		return nil, err
+	}
+	return analysis.Document(), nil
 }
 
 func (r *Reader) readEntryBytes(ctx context.Context, name string, op string) ([]byte, error) {

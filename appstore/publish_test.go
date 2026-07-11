@@ -92,6 +92,22 @@ func TestPublishRunsOfficialPrecheckCreateUploadAndReview(t *testing.T) {
 	}
 }
 
+func TestPublishAcceptsTemplatedLPK(t *testing.T) {
+	server := publishServer(t, true, validUploadResponse(), http.StatusOK)
+	defer server.Close()
+	client := appstore.New(appstore.Options{BaseURL: server.URL, HTTPClient: server.Client(), Token: auth.StaticToken("ci-token")})
+
+	result, err := client.Publish(context.Background(), appstore.PublishRequest{
+		Package: bytes.NewReader(publishTemplatedLPK(t)), Changelogs: map[string]string{"en": "release notes"},
+	})
+	if err != nil {
+		t.Fatalf("Publish() error = %#v", err)
+	}
+	if result.Upload.Package != "cloud.lazycat.apps.publish-demo" || result.Upload.Version != "1.0.0" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
 func TestPublishRejectsOfficialLintWarningsBeforeNetwork(t *testing.T) {
 	packageData := publishLPKWithImage(t, "docker.io/library/demo:1.0.0")
 	requests := 0
@@ -214,6 +230,33 @@ func validUploadResponse() string {
 
 func publishLPK(t *testing.T) []byte {
 	return publishLPKWithImage(t, "registry.lazycat.cloud/demo/app:1.0.0")
+}
+
+func publishTemplatedLPK(t *testing.T) []byte {
+	t.Helper()
+	root := fstest.MapFS{
+		"package.yml": {Data: []byte(`package: cloud.lazycat.apps.publish-demo
+version: 1.0.0
+name: Publish Demo
+min_os_version: 1.3.0
+locales:
+  en:
+    name: Publish Demo
+`), Mode: 0o644},
+		"manifest.yml": {Data: []byte(`application:
+  subdomain: publish-demo
+  image: registry.lazycat.cloud/demo/app:1.0.0
+{{- if .U.multi_instance }}
+  multi_instance: true
+{{- end }}
+`), Mode: 0o644},
+		"icon.png": {Data: []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}, Mode: 0o644},
+	}
+	var output bytes.Buffer
+	if _, err := lpk.Write(context.Background(), &output, lpk.WriteRequest{Layout: lpk.LayoutV2, Files: root, Strict: true, AllowManifestTemplate: true}); err != nil {
+		t.Fatal(err)
+	}
+	return output.Bytes()
 }
 
 func publishLPKWithImage(t *testing.T, image string) []byte {
