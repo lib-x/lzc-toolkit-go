@@ -21,17 +21,18 @@ The implementation uses the endpoints consumed by the official store frontend:
 | Application kinds | `/appstore/metarepo/{locale}/app_kinds.json` |
 | Homepage | `/appstore/metarepo/{locale}/{release}/homepage_block.json` |
 | More-list block | `/appstore/metarepo/{locale}/{release}/block_{type}.json` |
-| Download ranking | `/appstore/metarepo/{locale}/{release}/app_download_{period}.json` |
-| Developer ranking | `/appstore/metarepo/{locale}/{release}/developer_list_{period}.json` |
+| Download ranking | `/appstore/metarepo/{locale}/app_download_{period}.json` |
+| Developer ranking | `/appstore/metarepo/{locale}/developer_list_{period}.json` |
 | Version changelog | `/appstore/metarepo/{locale}/apps/{package}/{version}.changelog.json` |
 
 Metadata and image assets default to `https://dl.lazycat.cloud`. LPK downloads
 default to `https://dl.lazycatmicroserver.com` plus the `pkg_path` returned by
 the application metadata.
 
-Release-scoped calls first fetch `op/index`, validate the returned release name,
-and then fetch the requested snapshot file. The client does not parse the
-`lazycat.cloud/appstore` HTML page.
+Homepage and more-list calls first fetch `op/index`, validate the returned
+release name, and then fetch the requested snapshot file. Categories, kinds,
+application details, rankings, and changelogs use the stable locale directory.
+The client does not parse the `lazycat.cloud/appstore` HTML page.
 
 ## Package API
 
@@ -64,8 +65,8 @@ The first public surface contains:
 - `Homepage(ctx)` for the current release's configured homepage blocks.
 - `More(ctx, blockType)` for release-scoped store lists such as recents and
   ratings.
-- `DownloadRanking(ctx, period)` and `DeveloperRanking(ctx, period)` for
-  release-scoped rankings.
+- `DownloadRanking(ctx, period)` and `DeveloperRanking(ctx, period)` for the
+  stable `week`, `month`, and `all` rankings.
 - `VersionChangelog(ctx, packageName, version)` for the full changelog resource.
 - `AssetURL(path)` and `DownloadURL(path)` for resolving server-returned paths.
 - `ApplicationDownloadURL(app)` for validating the application/version match
@@ -145,4 +146,3 @@ Tests use `httptest.Server` and verify:
 
 The English and Chinese READMEs receive an anonymous public-store example that
 fetches an application and prints its latest version and official LPK URL.
-
