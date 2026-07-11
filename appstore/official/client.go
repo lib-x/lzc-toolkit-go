@@ -23,12 +23,18 @@ const (
 )
 
 type Options struct {
+	// MetadataBaseURL is the public metarepo root.
 	MetadataBaseURL string
+	// DownloadBaseURL is the origin used to resolve version package paths.
 	DownloadBaseURL string
-	Locale          string
-	HTTPClient      *http.Client
+	// Locale selects the metarepo locale and defaults to zh.
+	Locale string
+	// HTTPClient supplies transport and timeout settings. Its CookieJar is
+	// intentionally ignored so official catalog requests remain anonymous.
+	HTTPClient *http.Client
 }
 
+// Client reads the anonymous official App Store catalog.
 type Client struct {
 	metadataBase *url.URL
 	downloadBase *url.URL
@@ -37,6 +43,7 @@ type Client struct {
 	initErr      error
 }
 
+// New constructs an anonymous official catalog client.
 func New(options Options) *Client {
 	metadataBase, metadataErr := parseBaseURL(options.MetadataBaseURL, DefaultMetadataBaseURL)
 	downloadBase, downloadErr := parseBaseURL(options.DownloadBaseURL, DefaultDownloadBaseURL)
@@ -51,15 +58,18 @@ func New(options Options) *Client {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
+	isolatedHTTPClient := *httpClient
+	isolatedHTTPClient.Jar = nil
 	return &Client{
 		metadataBase: metadataBase,
 		downloadBase: downloadBase,
 		locale:       locale,
-		httpClient:   httpClient,
+		httpClient:   &isolatedHTTPClient,
 		initErr:      errors.Join(metadataErr, downloadErr),
 	}
 }
 
+// CurrentRelease returns the active metarepo snapshot name.
 func (client *Client) CurrentRelease(ctx context.Context) (string, error) {
 	if err := client.validate(ctx, "appstore.official.current_release"); err != nil {
 		return "", err

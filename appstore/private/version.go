@@ -40,6 +40,8 @@ type Version struct {
 	CreatedAt   time.Time  `json:"createdAt"`
 }
 
+// LatestVersion returns the newest approved version visible to the supplied
+// private group codes for an exact package ID.
 func (client *Client) LatestVersion(ctx context.Context, input LatestVersionRequest) (LatestVersion, error) {
 	packageID := strings.TrimSpace(input.PackageID)
 	if ctx == nil || client == nil || !safeSegment(packageID) {

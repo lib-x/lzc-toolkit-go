@@ -9,6 +9,8 @@ import (
 	lpkgo "github.com/lib-x/lzc-toolkit-go"
 )
 
+// Application returns the current public metadata and latest version for an
+// exact package ID.
 func (client *Client) Application(ctx context.Context, packageID string) (Application, error) {
 	if err := client.validate(ctx, "appstore.official.application"); err != nil {
 		return Application{}, err
@@ -27,6 +29,7 @@ func (client *Client) Application(ctx context.Context, packageID string) (Applic
 	return application, nil
 }
 
+// VersionChangelog returns the localized changelog for an exact version.
 func (client *Client) VersionChangelog(ctx context.Context, packageID, version string) (string, error) {
 	if err := client.validate(ctx, "appstore.official.version_changelog"); err != nil {
 		return "", err

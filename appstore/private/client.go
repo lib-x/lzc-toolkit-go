@@ -15,12 +15,19 @@ import (
 const maxResponseBytes = int64(4 << 20)
 
 type Options struct {
-	BaseURL            string
-	HTTPClient         *http.Client
-	GroupCodes         []string
+	// BaseURL is the Miaomiao private store origin and is required.
+	BaseURL string
+	// HTTPClient supplies transport and timeout settings. Its CookieJar is
+	// ignored and redirects are disabled to avoid forwarding group credentials.
+	HTTPClient *http.Client
+	// GroupCodes are default private group bearer codes for all requests.
+	GroupCodes []string
+	// GroupCodePlacement controls whether group codes use the header, query, or
+	// both. The zero value uses only X-Group-Codes.
 	GroupCodePlacement GroupCodePlacement
 }
 
+// Client queries a Miaomiao private community App Store.
 type Client struct {
 	baseURL            *url.URL
 	httpClient         *http.Client
@@ -28,6 +35,7 @@ type Client struct {
 	groupCodePlacement GroupCodePlacement
 }
 
+// New constructs a private community-store client.
 func New(options Options) (*Client, error) {
 	baseURL, err := parseBaseURL(options.BaseURL)
 	if err != nil {
@@ -41,6 +49,7 @@ func New(options Options) (*Client, error) {
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
 	isolatedHTTPClient := *httpClient
+	isolatedHTTPClient.Jar = nil
 	isolatedHTTPClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
 	}

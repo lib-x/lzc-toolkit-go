@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/lib-x/lzc-toolkit-go/appstore/official"
@@ -25,7 +27,15 @@ func TestClientCurrentReleaseIsAnonymous(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := official.New(official.Options{MetadataBaseURL: server.URL, HTTPClient: server.Client()})
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverURL, _ := url.Parse(server.URL)
+	jar.SetCookies(serverURL, []*http.Cookie{{Name: "userToken", Value: "must-not-send"}})
+	httpClient := *server.Client()
+	httpClient.Jar = jar
+	client := official.New(official.Options{MetadataBaseURL: server.URL, HTTPClient: &httpClient})
 	release, err := client.CurrentRelease(context.Background())
 	if err != nil {
 		t.Fatal(err)

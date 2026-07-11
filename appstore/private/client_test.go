@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	lpkgo "github.com/lib-x/lzc-toolkit-go"
@@ -25,6 +27,9 @@ func TestClientLatestVersionUsesPrivateGroupHeader(t *testing.T) {
 		if request.Header.Get("Authorization") != "" || request.Header.Get("X-User-Token") != "" {
 			t.Fatal("private store request unexpectedly contains account credentials")
 		}
+		if _, err := request.Cookie("userToken"); !errors.Is(err, http.ErrNoCookie) {
+			t.Fatalf("userToken cookie unexpectedly present: %v", err)
+		}
 		_, _ = w.Write([]byte(`{
   "packageId":"community.lazycat.group-app",
   "latestVersion":{
@@ -38,9 +43,17 @@ func TestClientLatestVersionUsesPrivateGroupHeader(t *testing.T) {
 	}))
 	defer server.Close()
 
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverURL, _ := url.Parse(server.URL)
+	jar.SetCookies(serverURL, []*http.Cookie{{Name: "userToken", Value: "must-not-send"}})
+	httpClient := *server.Client()
+	httpClient.Jar = jar
 	client, err := private.New(private.Options{
 		BaseURL:    server.URL,
-		HTTPClient: server.Client(),
+		HTTPClient: &httpClient,
 		GroupCodes: []string{" abc123 ", "invalid", "LATE23", "ABC123"},
 	})
 	if err != nil {
