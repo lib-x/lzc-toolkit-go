@@ -93,6 +93,13 @@ name: Original Name
 locales:
   zh:
     name: 示例
+permissions:
+  required:
+    - lightos.manage
+  optional:
+    - user.notify
+custom_package_field:
+  preserved: true
 `)
 	writeTestFile(t, root, "lzc-deploy-params.yml", "params: {}\n")
 	if err := os.WriteFile(filepath.Join(root, "icon.png"), append([]byte("\x89PNG\r\n\x1a\n"), []byte("fixture")...), 0o644); err != nil {
@@ -115,6 +122,29 @@ locales:
 	defer reader.Close()
 	for _, name := range []string{"manifest.yml", "package.yml", "icon.png", "deploy_params.yml", "compose.override.yml"} {
 		assertLPKEntry(t, reader, name)
+	}
+	packageEntry, err := reader.OpenEntry(context.Background(), "package.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	packageData, readErr := io.ReadAll(packageEntry)
+	closeErr := packageEntry.Close()
+	if readErr != nil || closeErr != nil {
+		t.Fatal(errors.Join(readErr, closeErr))
+	}
+	var packageDocument map[string]any
+	if err := yaml.Unmarshal(packageData, &packageDocument); err != nil {
+		t.Fatal(err)
+	}
+	wantPermissions := map[string]any{
+		"required": []any{"lightos.manage"},
+		"optional": []any{"user.notify"},
+	}
+	if !reflect.DeepEqual(packageDocument["permissions"], wantPermissions) {
+		t.Fatalf("permissions = %#v, want %#v", packageDocument["permissions"], wantPermissions)
+	}
+	if !reflect.DeepEqual(packageDocument["custom_package_field"], map[string]any{"preserved": true}) {
+		t.Fatalf("custom_package_field = %#v", packageDocument["custom_package_field"])
 	}
 	effective, err := reader.EffectiveManifest(context.Background())
 	if err != nil {

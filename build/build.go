@@ -285,6 +285,13 @@ func prepare(ctx context.Context, request Request) (preparedBuild, error) {
 		if splitErr != nil {
 			return fail(splitErr)
 		}
+		// An existing package.yml is the authoritative v2 metadata document.
+		// Preserve it wholesale after applying configured metadata overrides so
+		// fields unknown to the typed compatibility view (for example permissions)
+		// are never silently discarded during package assembly.
+		if packageDocument != nil {
+			packageOutput = packageDocument.Clone()
+		}
 		manifestBytes := processedManifest
 		if prepared.templated {
 			manifestBytes = removeTopLevelFields(manifestBytes, manifest.StaticPackageFields())
