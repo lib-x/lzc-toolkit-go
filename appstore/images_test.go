@@ -57,6 +57,36 @@ func TestCopyImageUsesServerSideReferenceProtocol(t *testing.T) {
 	}
 }
 
+func TestCopyImageRecoversMissingTerminalImageFromInventory(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/v3/developer/app/docker/image/push/v3/copy":
+			_, _ = response.Write([]byte(`{"started":true}`))
+		case "/api/v3/developer/app/docker/image/push/v3/progress":
+			_, _ = response.Write([]byte(`{"finished":true,"layers":[{"hash":"abc","progress":100}]}`))
+		case "/api/v3/developer/app/docker/image/push/v3/myimages":
+			_, _ = response.Write([]byte(`[
+{"source_image":"ghcr.io/acme/other:latest","lzc_image":"registry.lazycat.cloud/acme/other:old","UpdatedAt":"2026-07-12T00:00:00Z"},
+{"source_image":"ghcr.io/acme/demo:latest","lzc_image":"registry.lazycat.cloud/acme/demo:new","UpdatedAt":"2026-07-12T01:00:00Z"}
+]`))
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer server.Close()
+	client := appstore.New(appstore.Options{BaseURL: server.URL, HTTPClient: server.Client(), Token: auth.StaticToken("ci-token"), PollInterval: time.Millisecond})
+
+	result, err := client.CopyImage(context.Background(), appstore.CopyImageRequest{
+		Image: "ghcr.io/acme/demo:latest", Platform: "amd64", Timeout: time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.LazyCatImage != "registry.lazycat.cloud/acme/demo:new" || !result.Progress.Finished {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
 func TestListImagesSortsNewestFirstAndRetainsErrors(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		_, _ = response.Write([]byte(`[

@@ -117,7 +117,10 @@ func (client *Client) CopyImage(ctx context.Context, input CopyImageRequest) (Co
 				return CopyImageResult{}, &lpkgo.Error{Code: lpkgo.CodeRemoteUnavailable, Op: "appstore.copy_image", Cause: errors.New("server-side image copy failed")}
 			}
 			if strings.TrimSpace(payload.Image) == "" {
-				return CopyImageResult{}, storeRemoteError("appstore.copy_image", errors.New("copy result image is missing"), http.StatusOK)
+				payload.Image, err = client.copiedImageFromInventory(ctx, image)
+				if err != nil {
+					return CopyImageResult{}, err
+				}
 			}
 			return CopyImageResult{SourceImage: image, Platform: platform, LazyCatImage: payload.Image, Progress: progress}, nil
 		}
@@ -129,6 +132,23 @@ func (client *Client) CopyImage(ctx context.Context, input CopyImageRequest) (Co
 		case <-timer.C:
 		}
 	}
+}
+
+func (client *Client) copiedImageFromInventory(ctx context.Context, sourceImage string) (string, error) {
+	images, err := client.ListImages(ctx)
+	if err != nil {
+		return "", storeRemoteError("appstore.copy_image", errors.New("copy result image is missing and image inventory lookup failed"), http.StatusOK)
+	}
+	for _, image := range images {
+		if strings.TrimSpace(image.SourceImage) != sourceImage || strings.TrimSpace(image.ErrorMessage) != "" {
+			continue
+		}
+		lazycatImage := strings.TrimSpace(image.LazyCatImage)
+		if strings.HasPrefix(lazycatImage, "registry.lazycat.cloud/") {
+			return lazycatImage, nil
+		}
+	}
+	return "", storeRemoteError("appstore.copy_image", errors.New("copy result image is missing"), http.StatusOK)
 }
 
 func (client *Client) ListImages(ctx context.Context) ([]ImageRecord, error) {
