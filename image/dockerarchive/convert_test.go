@@ -3,6 +3,7 @@ package dockerarchive_test
 import (
 	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -35,6 +36,78 @@ func TestConvertCreatesValidMixedOCIArtifact(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(destination, "images", "blobs", "sha256", spec.EmbeddedDiffIDs[0].Hex())); !os.IsNotExist(err) {
 		t.Fatalf("raw embedded diff ID unexpectedly stored: %v", err)
+	}
+}
+
+func TestConvertPreservesAlreadyGzippedEmbeddedLayer(t *testing.T) {
+	var rawLayer bytes.Buffer
+	layerWriter := tar.NewWriter(&rawLayer)
+	writeTarEntry(t, layerWriter, "payload.txt", []byte("payload"))
+	if err := layerWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var compressedLayer bytes.Buffer
+	gzipWriter := gzip.NewWriter(&compressedLayer)
+	if _, err := gzipWriter.Write(rawLayer.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+	if err := gzipWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	rawDigest := digest(t, rawLayer.Bytes())
+	compressedDigest := digest(t, compressedLayer.Bytes())
+	configData, err := json.Marshal(map[string]any{
+		"architecture": "amd64",
+		"os":           "linux",
+		"rootfs":       map[string]any{"type": "layers", "diff_ids": []string{rawDigest.String()}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	imageID := digest(t, configData)
+	manifestData, err := json.Marshal([]map[string]any{{
+		"Config": imageID.Hex() + ".json", "RepoTags": []string{"debug.bridge/app:1.0.0"}, "Layers": []string{"layer/app.tar.gz"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var archive bytes.Buffer
+	archiveWriter := tar.NewWriter(&archive)
+	writeTarEntry(t, archiveWriter, "manifest.json", manifestData)
+	writeTarEntry(t, archiveWriter, imageID.Hex()+".json", configData)
+	writeTarEntry(t, archiveWriter, "layer/app.tar.gz", compressedLayer.Bytes())
+	if err := archiveWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(t.TempDir(), "artifact")
+	_, err = dockerarchive.Convert(context.Background(), bytes.NewReader(archive.Bytes()), destination, dockerarchive.Request{Specs: []dockerarchive.Spec{{
+		Ref: "debug.bridge/app:1.0.0", Alias: "app", ImageID: imageID, EmbeddedDiffIDs: []oci.Digest{rawDigest},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockFile, err := os.Open(filepath.Join(destination, "images.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, readErr := oci.ReadLock(context.Background(), lockFile)
+	closeErr := lockFile.Close()
+	if readErr != nil || closeErr != nil {
+		t.Fatalf("read lock: %v; close: %v", readErr, closeErr)
+	}
+	layers := lock.Images["app"].Layers
+	if len(layers) != 1 || layers[0].Digest != compressedDigest || layers[0].Source != oci.LayerSourceEmbed {
+		t.Fatalf("layers = %#v", layers)
+	}
+	blob, err := os.ReadFile(filepath.Join(destination, "images", "blobs", "sha256", compressedDigest.Hex()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(blob, compressedLayer.Bytes()) {
+		t.Fatal("embedded gzip layer bytes changed")
+	}
+	if _, err := oci.Validate(context.Background(), os.DirFS(destination)); err != nil {
+		t.Fatal(err)
 	}
 }
 

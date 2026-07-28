@@ -45,6 +45,13 @@ type extractedArchive struct {
 	sizes map[string]int64
 }
 
+type inspectedLayer struct {
+	diffID       oci.Digest
+	compressed   bool
+	blobDigest   oci.Digest
+	archiveBytes int64
+}
+
 // Convert consumes source without closing it and atomically creates an OCI
 // artifact directory at destination.
 func Convert(ctx context.Context, source io.Reader, destination string, request Request) (Result, error) {
@@ -236,14 +243,21 @@ func convertExtracted(ctx context.Context, archive extractedArchive, stage strin
 			if !exists {
 				return Result{}, archiveError(lpkgo.CodeNotFound, "dockerarchive.layer", fmt.Errorf("layer %q not found", layerName))
 			}
-			verified, err := digestFile(ctx, layerPath)
-			if err != nil || verified != rawDigest {
+			inspected, err := inspectDockerLayer(ctx, layerPath)
+			if err != nil || inspected.diffID != rawDigest {
 				return Result{}, archiveError(lpkgo.CodeIntegrityMismatch, "dockerarchive.layer", fmt.Errorf("diff id mismatch for %q", layerName))
 			}
 			if _, shouldEmbed := embedded[rawDigest]; shouldEmbed {
-				compressed, compressedSize, err := gzipBlob(ctx, layerPath, blobsDir)
-				if err != nil {
-					return Result{}, err
+				compressed, compressedSize := inspected.blobDigest, inspected.archiveBytes
+				if inspected.compressed {
+					if err := copyBlob(ctx, layerPath, blobsDir, compressed, compressedSize); err != nil {
+						return Result{}, err
+					}
+				} else {
+					compressed, compressedSize, err = gzipBlob(ctx, layerPath, blobsDir)
+					if err != nil {
+						return Result{}, err
+					}
 				}
 				imageManifest.Layers = append(imageManifest.Layers, oci.Descriptor{MediaType: oci.MediaTypeImageLayerGzip, Digest: compressed, Size: compressedSize})
 				lockImage.Layers = append(lockImage.Layers, oci.LockLayer{Digest: compressed, Source: oci.LayerSourceEmbed})
@@ -370,6 +384,91 @@ func gzipBlob(ctx context.Context, sourcePath, blobsDir string) (oci.Digest, int
 		}
 	}
 	return digest, counter.written, nil
+}
+
+func inspectDockerLayer(ctx context.Context, filename string) (inspectedLayer, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return inspectedLayer{}, archiveError(lpkgo.CodeCommandFailed, "dockerarchive.inspect_layer", err)
+	}
+	var head [2]byte
+	read, readErr := io.ReadFull(file, head[:])
+	if readErr != nil && !errors.Is(readErr, io.EOF) && !errors.Is(readErr, io.ErrUnexpectedEOF) {
+		_ = file.Close()
+		return inspectedLayer{}, archiveError(lpkgo.CodeInvalidConfig, "dockerarchive.inspect_layer", readErr)
+	}
+	info, statErr := file.Stat()
+	closeErr := file.Close()
+	if statErr != nil || closeErr != nil {
+		return inspectedLayer{}, archiveError(lpkgo.CodeCommandFailed, "dockerarchive.inspect_layer", errors.Join(statErr, closeErr))
+	}
+	compressed := read == len(head) && head[0] == 0x1f && head[1] == 0x8b
+	if !compressed {
+		diffID, err := digestFile(ctx, filename)
+		return inspectedLayer{diffID: diffID, blobDigest: diffID, archiveBytes: info.Size()}, err
+	}
+	blobDigest, err := digestFile(ctx, filename)
+	if err != nil {
+		return inspectedLayer{}, archiveError(lpkgo.CodeCommandFailed, "dockerarchive.inspect_layer", err)
+	}
+	input, err := os.Open(filename)
+	if err != nil {
+		return inspectedLayer{}, archiveError(lpkgo.CodeCommandFailed, "dockerarchive.inspect_layer", err)
+	}
+	decompressed, err := gzip.NewReader(&contextReader{ctx: ctx, reader: input})
+	if err != nil {
+		_ = input.Close()
+		return inspectedLayer{}, archiveError(lpkgo.CodeInvalidConfig, "dockerarchive.inspect_layer", err)
+	}
+	hasher := sha256.New()
+	_, copyErr := io.Copy(hasher, decompressed)
+	gzipCloseErr := decompressed.Close()
+	inputCloseErr := input.Close()
+	if copyErr != nil || gzipCloseErr != nil || inputCloseErr != nil {
+		return inspectedLayer{}, archiveError(lpkgo.CodeInvalidConfig, "dockerarchive.inspect_layer", errors.Join(copyErr, gzipCloseErr, inputCloseErr))
+	}
+	diffID, err := oci.ParseDigest(fmt.Sprintf("sha256:%x", hasher.Sum(nil)))
+	if err != nil {
+		return inspectedLayer{}, archiveError(lpkgo.CodeIntegrityMismatch, "dockerarchive.inspect_layer", err)
+	}
+	return inspectedLayer{diffID: diffID, compressed: true, blobDigest: blobDigest, archiveBytes: info.Size()}, nil
+}
+
+func copyBlob(ctx context.Context, sourcePath, blobsDir string, expected oci.Digest, expectedSize int64) error {
+	target := filepath.Join(blobsDir, expected.Hex())
+	if _, err := os.Stat(target); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return archiveError(lpkgo.CodeCommandFailed, "dockerarchive.copy_blob", err)
+	}
+	input, err := os.Open(sourcePath)
+	if err != nil {
+		return archiveError(lpkgo.CodeCommandFailed, "dockerarchive.copy_blob", err)
+	}
+	temporary, err := os.CreateTemp(blobsDir, ".layer-*")
+	if err != nil {
+		_ = input.Close()
+		return archiveError(lpkgo.CodeCommandFailed, "dockerarchive.copy_blob", err)
+	}
+	temporaryName := temporary.Name()
+	hasher := sha256.New()
+	written, copyErr := io.Copy(io.MultiWriter(temporary, hasher), &contextReader{ctx: ctx, reader: input})
+	inputCloseErr := input.Close()
+	fileCloseErr := temporary.Close()
+	actual, digestErr := oci.ParseDigest(fmt.Sprintf("sha256:%x", hasher.Sum(nil)))
+	if copyErr != nil || inputCloseErr != nil || fileCloseErr != nil || digestErr != nil {
+		_ = os.Remove(temporaryName)
+		return archiveError(lpkgo.CodeIntegrityMismatch, "dockerarchive.copy_blob", errors.Join(copyErr, inputCloseErr, fileCloseErr, digestErr))
+	}
+	if written != expectedSize || actual != expected {
+		_ = os.Remove(temporaryName)
+		return archiveError(lpkgo.CodeIntegrityMismatch, "dockerarchive.copy_blob", errors.New("blob verification failed"))
+	}
+	if err := os.Rename(temporaryName, target); err != nil {
+		_ = os.Remove(temporaryName)
+		return archiveError(lpkgo.CodeCommandFailed, "dockerarchive.copy_blob", err)
+	}
+	return nil
 }
 
 func writeBytesBlob(blobsDir string, digest oci.Digest, data []byte) error {
