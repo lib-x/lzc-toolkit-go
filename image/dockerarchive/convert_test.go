@@ -8,10 +8,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
 	"github.com/lib-x/lzc-toolkit-go/image/dockerarchive"
 	"github.com/lib-x/lzc-toolkit-go/oci"
 )
@@ -108,6 +110,142 @@ func TestConvertPreservesAlreadyGzippedEmbeddedLayer(t *testing.T) {
 	}
 	if _, err := oci.Validate(context.Background(), os.DirFS(destination)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestConvertRejectsGzipLayerExpandedBeyondFileLimit(t *testing.T) {
+	rawLayer := bytes.Repeat([]byte("expanded-layer-content\n"), 256)
+	var compressedLayer bytes.Buffer
+	gzipWriter := gzip.NewWriter(&compressedLayer)
+	if _, err := gzipWriter.Write(rawLayer); err != nil {
+		t.Fatal(err)
+	}
+	if err := gzipWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	const maxFileBytes = 1024
+	if compressedLayer.Len() >= maxFileBytes || len(rawLayer) <= maxFileBytes {
+		t.Fatalf("invalid test fixture sizes: compressed=%d raw=%d", compressedLayer.Len(), len(rawLayer))
+	}
+	rawDigest := digest(t, rawLayer)
+	configData, err := json.Marshal(map[string]any{
+		"architecture": "amd64",
+		"os":           "linux",
+		"rootfs":       map[string]any{"type": "layers", "diff_ids": []string{rawDigest.String()}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	imageID := digest(t, configData)
+	manifestData, err := json.Marshal([]map[string]any{{
+		"Config": imageID.Hex() + ".json", "RepoTags": []string{"debug.bridge/app:1.0.0"}, "Layers": []string{"layer/app.tar.gz"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var archive bytes.Buffer
+	archiveWriter := tar.NewWriter(&archive)
+	writeTarEntry(t, archiveWriter, "manifest.json", manifestData)
+	writeTarEntry(t, archiveWriter, imageID.Hex()+".json", configData)
+	writeTarEntry(t, archiveWriter, "layer/app.tar.gz", compressedLayer.Bytes())
+	if err := archiveWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_, err = dockerarchive.Convert(context.Background(), bytes.NewReader(archive.Bytes()), filepath.Join(t.TempDir(), "artifact"), dockerarchive.Request{
+		Specs: []dockerarchive.Spec{{
+			Ref: "debug.bridge/app:1.0.0", Alias: "app", ImageID: imageID, EmbeddedDiffIDs: []oci.Digest{rawDigest},
+		}},
+		Limits: dockerarchive.Limits{MaxFileBytes: maxFileBytes},
+	})
+	if !errors.Is(err, lpkgo.ErrInvalidConfig) {
+		t.Fatalf("Convert() error = %#v, want invalid config", err)
+	}
+}
+
+func TestConvertCachesRepeatedGzipLayerAgainstExpandedLimit(t *testing.T) {
+	rawLayer := bytes.Repeat([]byte("shared-layer\n"), 64)
+	compressedLayer := gzipBytes(t, rawLayer)
+	rawDigest := digest(t, rawLayer)
+	configData, err := json.Marshal(map[string]any{
+		"architecture": "amd64",
+		"os":           "linux",
+		"rootfs": map[string]any{
+			"type": "layers", "diff_ids": []string{rawDigest.String(), rawDigest.String()},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	imageID := digest(t, configData)
+	manifestData, err := json.Marshal([]map[string]any{{
+		"Config": imageID.Hex() + ".json", "RepoTags": []string{"debug.bridge/app:1.0.0"},
+		"Layers": []string{"layer/shared.tar.gz", "layer/shared.tar.gz"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var archive bytes.Buffer
+	archiveWriter := tar.NewWriter(&archive)
+	writeTarEntry(t, archiveWriter, "manifest.json", manifestData)
+	writeTarEntry(t, archiveWriter, imageID.Hex()+".json", configData)
+	writeTarEntry(t, archiveWriter, "layer/shared.tar.gz", compressedLayer)
+	if err := archiveWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_, err = dockerarchive.Convert(context.Background(), bytes.NewReader(archive.Bytes()), filepath.Join(t.TempDir(), "artifact"), dockerarchive.Request{
+		Specs: []dockerarchive.Spec{{
+			Ref: "debug.bridge/app:1.0.0", Alias: "app", ImageID: imageID, EmbeddedDiffIDs: []oci.Digest{rawDigest},
+		}},
+		Limits: dockerarchive.Limits{MaxFileBytes: int64(len(rawLayer)), MaxExpandedBytes: int64(len(rawLayer))},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestConvertRejectsCumulativeExpandedLayerLimit(t *testing.T) {
+	rawLayers := [][]byte{
+		bytes.Repeat([]byte("first-layer\n"), 64),
+		bytes.Repeat([]byte("second-layer\n"), 64),
+	}
+	diffIDs := []string{digest(t, rawLayers[0]).String(), digest(t, rawLayers[1]).String()}
+	configData, err := json.Marshal(map[string]any{
+		"architecture": "amd64",
+		"os":           "linux",
+		"rootfs":       map[string]any{"type": "layers", "diff_ids": diffIDs},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	imageID := digest(t, configData)
+	manifestData, err := json.Marshal([]map[string]any{{
+		"Config": imageID.Hex() + ".json", "RepoTags": []string{"debug.bridge/app:1.0.0"},
+		"Layers": []string{"layer/first.tar.gz", "layer/second.tar.gz"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var archive bytes.Buffer
+	archiveWriter := tar.NewWriter(&archive)
+	writeTarEntry(t, archiveWriter, "manifest.json", manifestData)
+	writeTarEntry(t, archiveWriter, imageID.Hex()+".json", configData)
+	writeTarEntry(t, archiveWriter, "layer/first.tar.gz", gzipBytes(t, rawLayers[0]))
+	writeTarEntry(t, archiveWriter, "layer/second.tar.gz", gzipBytes(t, rawLayers[1]))
+	if err := archiveWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_, err = dockerarchive.Convert(context.Background(), bytes.NewReader(archive.Bytes()), filepath.Join(t.TempDir(), "artifact"), dockerarchive.Request{
+		Specs: []dockerarchive.Spec{{
+			Ref: "debug.bridge/app:1.0.0", Alias: "app", ImageID: imageID,
+			EmbeddedDiffIDs: []oci.Digest{digest(t, rawLayers[0]), digest(t, rawLayers[1])},
+		}},
+		Limits: dockerarchive.Limits{
+			MaxFileBytes:     int64(len(rawLayers[1])),
+			MaxExpandedBytes: int64(len(rawLayers[0]) + len(rawLayers[1]) - 1),
+		},
+	})
+	if !errors.Is(err, lpkgo.ErrInvalidConfig) {
+		t.Fatalf("Convert() error = %#v, want invalid config", err)
 	}
 }
 
@@ -236,6 +374,19 @@ func writeTarEntry(t *testing.T, writer *tar.Writer, name string, data []byte) {
 	if _, err := writer.Write(data); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func gzipBytes(t *testing.T, data []byte) []byte {
+	t.Helper()
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	if _, err := writer.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return compressed.Bytes()
 }
 
 func digest(t *testing.T, data []byte) oci.Digest {

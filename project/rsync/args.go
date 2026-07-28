@@ -65,18 +65,29 @@ func BuildTunnelArgs(options TunnelOptions) ([]string, error) {
 		return nil, rsyncError(lpkgo.CodeInvalidArgument, "project.rsync.tunnel_args", errors.New("invalid tunnel target host"))
 	}
 	sshTarget := strings.TrimSpace(options.SSHArgs[len(options.SSHArgs)-1])
-	if sshTarget == "" || strings.HasPrefix(sshTarget, "-") || strings.ContainsAny(sshTarget, "\r\n\x00") {
+	sshOptions := options.SSHArgs[:len(options.SSHArgs)-1]
+	if sshTarget == "" || strings.HasPrefix(sshTarget, "-") || strings.ContainsAny(sshTarget, "\r\n\x00") || hasSSHControlSocketOption(sshOptions) {
 		return nil, rsyncError(lpkgo.CodeInvalidArgument, "project.rsync.tunnel_args", errors.New("invalid SSH target"))
 	}
-	args := append([]string(nil), options.SSHArgs[:len(options.SSHArgs)-1]...)
-	forward := "127.0.0.1:" + strconv.Itoa(options.LocalPort) + ":" + formatHost(host) + ":" + strconv.Itoa(targetPort)
-	args = append(args,
+	args := []string{
 		"-o", "ControlMaster=no",
 		"-o", "ControlPath=none",
 		"-o", "ExitOnForwardFailure=yes",
-		"-L", forward, sshTarget, "-N",
-	)
+	}
+	args = append(args, sshOptions...)
+	forward := "127.0.0.1:" + strconv.Itoa(options.LocalPort) + ":" + formatHost(host) + ":" + strconv.Itoa(targetPort)
+	args = append(args, "-L", forward, sshTarget, "-N")
 	return args, nil
+}
+
+func hasSSHControlSocketOption(args []string) bool {
+	for _, argument := range args {
+		argument = strings.TrimSpace(argument)
+		if argument == "-S" || strings.HasPrefix(argument, "-S=") || (strings.HasPrefix(argument, "-S") && len(argument) > len("-S")) {
+			return true
+		}
+	}
+	return false
 }
 
 func normalize(options Options) (string, string, Target, error) {

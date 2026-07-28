@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/lib-x/lzc-toolkit-go/oci"
@@ -33,6 +34,21 @@ func TestShouldResolveDockerArchiveConfigImageID(t *testing.T) {
 				t.Fatalf("shouldResolveDockerArchiveConfigImageID(%q) = %t, want %t", test.descriptor, got, test.want)
 			}
 		})
+	}
+}
+
+func TestTemporaryImageRefIsUniquePerBuild(t *testing.T) {
+	const label = "cloud.lazycat.apps.demo-image-app:1.0.0"
+	first, err := temporaryImageRef(label)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := temporaryImageRef(label)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second || !strings.HasPrefix(first, "debug.bridge/lzc-") || !strings.HasSuffix(first, "/"+label) {
+		t.Fatalf("temporary refs = %q, %q", first, second)
 	}
 }
 
@@ -88,6 +104,43 @@ func TestDockerArchiveConfigImageIDFallsBackToFirstManifest(t *testing.T) {
 	}
 
 	got, err := dockerArchiveConfigImageID(context.Background(), archivePath, "missing:tag")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := cliTestDigest(t, config); got != want {
+		t.Fatalf("dockerArchiveConfigImageID() = %s, want %s", got, want)
+	}
+}
+
+func TestDockerArchiveConfigImageIDIgnoresUnrelatedSmallBlobs(t *testing.T) {
+	wantedRef := "debug.bridge/example:latest"
+	config := []byte(`{"architecture":"amd64"}`)
+	manifest, err := json.Marshal([]map[string]any{{
+		"Config": "blobs/sha256/config", "RepoTags": []string{wantedRef}, "Layers": []string{"blobs/sha256/layer"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "image.tar")
+	file, err := os.Create(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := tar.NewWriter(file)
+	cliTestTarEntry(t, writer, "manifest.json", manifest)
+	blob := make([]byte, 2<<20)
+	for index := 0; index < 17; index++ {
+		cliTestTarEntry(t, writer, fmt.Sprintf("blobs/sha256/layer-%02d", index), blob)
+	}
+	cliTestTarEntry(t, writer, "blobs/sha256/config", config)
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := dockerArchiveConfigImageID(context.Background(), archivePath, wantedRef)
 	if err != nil {
 		t.Fatal(err)
 	}

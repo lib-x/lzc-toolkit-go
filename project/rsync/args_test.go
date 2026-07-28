@@ -60,13 +60,47 @@ func TestBuildTunnelArgsPreservesSSHOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		"-o", "StrictHostKeyChecking=no", "-p", "2222",
 		"-o", "ControlMaster=no", "-o", "ControlPath=none",
-		"-o", "ExitOnForwardFailure=yes", "-L", "127.0.0.1:19000:[fd00::8]:874",
+		"-o", "ExitOnForwardFailure=yes",
+		"-o", "StrictHostKeyChecking=no", "-p", "2222",
+		"-L", "127.0.0.1:19000:[fd00::8]:874",
 		"developer@box.example", "-N",
 	}
 	if !reflect.DeepEqual(args, want) {
 		t.Fatalf("args=%#v", args)
+	}
+}
+
+func TestBuildTunnelArgsOverridesCallerMultiplexOptions(t *testing.T) {
+	args, err := rsync.BuildTunnelArgs(rsync.TunnelOptions{
+		SSHArgs: []string{
+			"-o", "ControlMaster=auto",
+			"-o", "ControlPath=/tmp/caller-mux",
+			"developer@box.example",
+		},
+		LocalPort: 19000, TargetHost: "127.0.0.1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPrefix := []string{"-o", "ControlMaster=no", "-o", "ControlPath=none", "-o", "ExitOnForwardFailure=yes"}
+	if !reflect.DeepEqual(args[:len(wantPrefix)], wantPrefix) {
+		t.Fatalf("args prefix=%#v, want %#v", args[:len(wantPrefix)], wantPrefix)
+	}
+}
+
+func TestBuildTunnelArgsRejectsCallerControlSocket(t *testing.T) {
+	for _, sshArgs := range [][]string{
+		{"-S", "/tmp/mux", "developer@box.example"},
+		{"-S=/tmp/mux", "developer@box.example"},
+		{"-S/tmp/mux", "developer@box.example"},
+	} {
+		_, err := rsync.BuildTunnelArgs(rsync.TunnelOptions{
+			SSHArgs: sshArgs, LocalPort: 19000, TargetHost: "127.0.0.1",
+		})
+		if !errors.Is(err, lpkgo.ErrInvalidArgument) {
+			t.Fatalf("BuildTunnelArgs(%#v) error = %#v", sshArgs, err)
+		}
 	}
 }
 

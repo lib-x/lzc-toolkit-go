@@ -4,7 +4,9 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,10 +23,9 @@ import (
 )
 
 const (
-	maxCommandOutput             = 16 << 20
-	maxDockerArchiveConfigBytes  = 2 << 20
-	maxDockerArchiveMetadata     = 32 << 20
-	maxDockerArchiveMetadataFile = 4096
+	maxCommandOutput            = 16 << 20
+	maxDockerArchiveConfigBytes = 2 << 20
+	maxDockerArchiveEntries     = 4096
 )
 
 type CLIEngine struct{}
@@ -38,7 +39,10 @@ func (CLIEngine) Build(ctx context.Context, request BuildRequest) (BuildResult, 
 		return BuildResult{}, err
 	}
 	defer cleanup()
-	ref := "debug.bridge/" + request.Entry.ImageLabel
+	ref, err := temporaryImageRef(request.Entry.ImageLabel)
+	if err != nil {
+		return BuildResult{}, err
+	}
 	args := []string{"buildx", "build", "--platform", request.Platform, "--load", "--tag", ref, "--file", dockerfile, "."}
 	if _, err := run(ctx, "docker", args, request.Entry.ContextDir, map[string]string{"DOCKER_BUILDKIT": "1"}, nil); err != nil {
 		return BuildResult{}, err
@@ -58,6 +62,14 @@ func (CLIEngine) Build(ctx context.Context, request BuildRequest) (BuildResult, 
 		}
 	}
 	return result, nil
+}
+
+func temporaryImageRef(imageLabel string) (string, error) {
+	var random [8]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return "", errors.New("generate temporary Docker image ref")
+	}
+	return "debug.bridge/lzc-" + hex.EncodeToString(random[:]) + "/" + imageLabel, nil
 }
 
 func (CLIEngine) Save(ctx context.Context, refs []string, destination io.Writer) error {
@@ -153,56 +165,12 @@ func dockerArchiveConfigImageID(ctx context.Context, archivePath, ref string) (o
 	if ctx == nil {
 		return "", errors.New("nil context")
 	}
-	file, err := os.Open(filepath.Clean(archivePath))
+	manifestData, found, err := readDockerArchiveFile(ctx, archivePath, "manifest.json", maxCommandOutput)
 	if err != nil {
-		return "", errors.New("open Docker image archive")
+		return "", err
 	}
-	defer file.Close()
-	reader := tar.NewReader(file)
-	metadata := make(map[string][]byte)
-	metadataBytes := int64(0)
-	for entries := 0; ; entries++ {
-		if err := ctx.Err(); err != nil {
-			return "", err
-		}
-		if entries > maxDockerArchiveMetadataFile {
-			return "", errors.New("Docker image archive metadata entry limit exceeded")
-		}
-		header, err := reader.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return "", errors.New("read Docker image archive")
-		}
-		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
-			continue
-		}
-		name, ok := normalizeDockerArchivePath(header.Name)
-		if !ok || header.Size < 0 {
-			return "", errors.New("invalid Docker image archive metadata path")
-		}
-		limit := int64(maxDockerArchiveConfigBytes)
-		if name == "manifest.json" {
-			limit = maxCommandOutput
-		}
-		isMetadata := name == "manifest.json" || strings.HasSuffix(name, ".json") || strings.HasPrefix(name, "blobs/sha256/")
-		if !isMetadata || header.Size > limit {
-			continue
-		}
-		if metadataBytes+header.Size > maxDockerArchiveMetadata {
-			return "", errors.New("Docker image archive metadata size limit exceeded")
-		}
-		data, err := readDockerArchiveEntry(ctx, reader, header.Size)
-		if err != nil {
-			return "", err
-		}
-		metadata[name] = data
-		metadataBytes += header.Size
-	}
-	manifestData := metadata["manifest.json"]
 	var manifests []dockerArchiveManifest
-	if len(manifestData) == 0 || json.Unmarshal(manifestData, &manifests) != nil || len(manifests) == 0 {
+	if !found || len(manifestData) == 0 || json.Unmarshal(manifestData, &manifests) != nil || len(manifests) == 0 {
 		return "", errors.New("invalid Docker image archive manifest")
 	}
 	selected := manifests[0]
@@ -218,8 +186,11 @@ func dockerArchiveConfigImageID(ctx context.Context, archivePath, ref string) (o
 	if !ok {
 		return "", errors.New("invalid Docker image archive config path")
 	}
-	configData := metadata[configName]
-	if len(configData) == 0 {
+	configData, found, err := readDockerArchiveFile(ctx, archivePath, configName, maxDockerArchiveConfigBytes)
+	if err != nil {
+		return "", err
+	}
+	if !found || len(configData) == 0 {
 		return "", errors.New("Docker image archive config is missing")
 	}
 	sum := sha256.Sum256(configData)
@@ -228,6 +199,54 @@ func dockerArchiveConfigImageID(ctx context.Context, archivePath, ref string) (o
 		return "", errors.New("invalid Docker image archive config digest")
 	}
 	return digest, nil
+}
+
+func readDockerArchiveFile(ctx context.Context, archivePath, wanted string, limit int64) ([]byte, bool, error) {
+	file, err := os.Open(filepath.Clean(archivePath))
+	if err != nil {
+		return nil, false, errors.New("open Docker image archive")
+	}
+	defer file.Close()
+	reader := tar.NewReader(file)
+	var result []byte
+	entries := 0
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, false, err
+		}
+		header, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, false, errors.New("read Docker image archive")
+		}
+		entries++
+		if entries > maxDockerArchiveEntries {
+			return nil, false, errors.New("Docker image archive entry limit exceeded")
+		}
+		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
+			continue
+		}
+		name, ok := normalizeDockerArchivePath(header.Name)
+		if !ok || header.Size < 0 {
+			return nil, false, errors.New("invalid Docker image archive metadata path")
+		}
+		if name != wanted {
+			continue
+		}
+		if result != nil {
+			return nil, false, errors.New("duplicate Docker image archive metadata path")
+		}
+		if header.Size > limit {
+			return nil, false, errors.New("Docker image archive metadata size limit exceeded")
+		}
+		result, err = readDockerArchiveEntry(ctx, reader, header.Size)
+		if err != nil {
+			return nil, false, err
+		}
+	}
+	return result, result != nil, nil
 }
 
 func normalizeDockerArchivePath(name string) (string, bool) {

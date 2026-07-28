@@ -59,7 +59,10 @@ func Analyze(data []byte) (*Analysis, error) {
 	if err != nil {
 		return nil, err
 	}
-	wholeLineControls := wholeLineControlActions(data, actions)
+	var wholeLineControls map[int]bool
+	if len(actions) != 0 {
+		wholeLineControls = wholeLineControlActions(data, actions)
+	}
 	analysis := &Analysis{lineDepth: make(map[int]int)}
 	projected := append([]byte(nil), data...)
 	stack := make([]templateFrame, 0)
@@ -154,6 +157,7 @@ func Analyze(data []byte) (*Analysis, error) {
 
 func wholeLineControlActions(data []byte, actions []scannedTemplateAction) map[int]bool {
 	promoted := make(map[int]bool)
+	blockScalarLines := blockScalarContentLines(data)
 	stack := make([]int, 0)
 	for index, action := range actions {
 		kind := actionKind(data[action.start:action.end])
@@ -167,7 +171,7 @@ func wholeLineControlActions(data []byte, actions []scannedTemplateAction) map[i
 			openingIndex := stack[len(stack)-1]
 			stack = stack[:len(stack)-1]
 			opening := actions[openingIndex]
-			if opening.line != action.line || !actionStartsPhysicalLine(data, opening.start) || !actionEndsPhysicalLine(data, action.end) {
+			if opening.line != action.line || blockScalarLines[opening.line] || !actionStartsPhysicalLine(data, opening.start) || !actionEndsPhysicalLine(data, action.end) {
 				continue
 			}
 			if hasNestedControlAction(data, actions[openingIndex+1:index]) {
@@ -178,6 +182,107 @@ func wholeLineControlActions(data []byte, actions []scannedTemplateAction) map[i
 		}
 	}
 	return promoted
+}
+
+func blockScalarContentLines(data []byte) map[int]bool {
+	result := make(map[int]bool)
+	headerIndent := -1
+	for index, line := range bytes.Split(data, []byte{'\n'}) {
+		trimmed := bytes.TrimSpace(line)
+		indent := len(line) - len(bytes.TrimLeft(line, " \t"))
+		if headerIndent >= 0 {
+			if len(trimmed) == 0 {
+				continue
+			}
+			if indent > headerIndent {
+				result[index+1] = true
+				continue
+			}
+			headerIndent = -1
+		}
+		if isBlockScalarHeader(line) {
+			headerIndent = indent
+		}
+	}
+	return result
+}
+
+func isBlockScalarHeader(line []byte) bool {
+	content := strings.TrimSpace(stripYAMLLineComment(string(line)))
+	fields := strings.Fields(content)
+	if len(fields) < 2 {
+		return false
+	}
+	indicator := fields[len(fields)-1]
+	if !validBlockScalarIndicator(indicator) {
+		return false
+	}
+	headerFields := fields[:len(fields)-1]
+	for len(headerFields) > 0 {
+		property := headerFields[len(headerFields)-1]
+		if !strings.HasPrefix(property, "&") && !strings.HasPrefix(property, "!") {
+			break
+		}
+		headerFields = headerFields[:len(headerFields)-1]
+	}
+	if len(headerFields) == 0 {
+		return false
+	}
+	prefix := strings.Join(headerFields, " ")
+	return prefix == "-" || strings.HasSuffix(prefix, ":")
+}
+
+func validBlockScalarIndicator(value string) bool {
+	if len(value) < 1 || len(value) > 3 || (value[0] != '|' && value[0] != '>') {
+		return false
+	}
+	seenChomp, seenIndent := false, false
+	for _, character := range value[1:] {
+		switch {
+		case character == '+' || character == '-':
+			if seenChomp {
+				return false
+			}
+			seenChomp = true
+		case character >= '1' && character <= '9':
+			if seenIndent {
+				return false
+			}
+			seenIndent = true
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func stripYAMLLineComment(line string) string {
+	inSingle, inDouble, escaped := false, false, false
+	for index, character := range line {
+		if inDouble && escaped {
+			escaped = false
+			continue
+		}
+		if inDouble && character == '\\' {
+			escaped = true
+			continue
+		}
+		switch character {
+		case '\'':
+			if !inDouble {
+				inSingle = !inSingle
+			}
+		case '"':
+			if !inSingle {
+				inDouble = !inDouble
+			}
+		case '#':
+			if !inSingle && !inDouble {
+				return line[:index]
+			}
+		}
+	}
+	return line
 }
 
 func hasNestedControlAction(data []byte, actions []scannedTemplateAction) bool {

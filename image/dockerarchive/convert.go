@@ -22,10 +22,11 @@ import (
 )
 
 const (
-	defaultMaxEntries      = 100_000
-	defaultMaxFileBytes    = int64(32 << 30)
-	defaultMaxArchiveBytes = int64(128 << 30)
-	maxJSONBytes           = int64(16 << 20)
+	defaultMaxEntries       = 100_000
+	defaultMaxFileBytes     = int64(32 << 30)
+	defaultMaxExpandedBytes = int64(128 << 30)
+	defaultMaxArchiveBytes  = int64(128 << 30)
+	maxJSONBytes            = int64(16 << 20)
 )
 
 type dockerManifest struct {
@@ -46,10 +47,11 @@ type extractedArchive struct {
 }
 
 type inspectedLayer struct {
-	diffID       oci.Digest
-	compressed   bool
-	blobDigest   oci.Digest
-	archiveBytes int64
+	diffID            oci.Digest
+	compressed        bool
+	blobDigest        oci.Digest
+	archiveBytes      int64
+	uncompressedBytes int64
 }
 
 // Convert consumes source without closing it and atomically creates an OCI
@@ -87,7 +89,7 @@ func Convert(ctx context.Context, source io.Reader, destination string, request 
 		}
 	}()
 
-	result, err := convertExtracted(ctx, extracted, stage, request.Specs)
+	result, err := convertExtracted(ctx, extracted, stage, request.Specs, limits)
 	if err != nil {
 		return Result{}, err
 	}
@@ -162,7 +164,7 @@ func extract(ctx context.Context, source io.Reader, limits Limits) (extractedArc
 	return extractedArchive{root: root, sizes: sizes}, cleanup, nil
 }
 
-func convertExtracted(ctx context.Context, archive extractedArchive, stage string, specs []Spec) (Result, error) {
+func convertExtracted(ctx context.Context, archive extractedArchive, stage string, specs []Spec, limits Limits) (Result, error) {
 	if len(specs) == 0 {
 		return Result{}, archiveError(lpkgo.CodeInvalidArgument, "dockerarchive.convert", errors.New("specs cannot be empty"))
 	}
@@ -196,6 +198,8 @@ func convertExtracted(ctx context.Context, archive extractedArchive, stage strin
 	sortedSpecs := append([]Spec(nil), specs...)
 	sort.Slice(sortedSpecs, func(i, j int) bool { return sortedSpecs[i].Alias < sortedSpecs[j].Alias })
 	seenEmbedded := make(map[oci.Digest]struct{})
+	inspectedLayers := make(map[string]inspectedLayer)
+	remainingExpandedBytes := limits.MaxExpandedBytes
 	for _, spec := range sortedSpecs {
 		if err := contextError(ctx, "dockerarchive.convert"); err != nil {
 			return Result{}, err
@@ -243,8 +247,19 @@ func convertExtracted(ctx context.Context, archive extractedArchive, stage strin
 			if !exists {
 				return Result{}, archiveError(lpkgo.CodeNotFound, "dockerarchive.layer", fmt.Errorf("layer %q not found", layerName))
 			}
-			inspected, err := inspectDockerLayer(ctx, layerPath)
-			if err != nil || inspected.diffID != rawDigest {
+			inspected, inspectedBefore := inspectedLayers[layerName]
+			if !inspectedBefore {
+				inspected, err = inspectDockerLayer(ctx, layerPath, limits.MaxFileBytes)
+				if err != nil {
+					return Result{}, err
+				}
+				if inspected.uncompressedBytes > remainingExpandedBytes {
+					return Result{}, archiveError(lpkgo.CodeInvalidConfig, "dockerarchive.layer", errors.New("expanded layer size limit exceeded"))
+				}
+				remainingExpandedBytes -= inspected.uncompressedBytes
+				inspectedLayers[layerName] = inspected
+			}
+			if inspected.diffID != rawDigest {
 				return Result{}, archiveError(lpkgo.CodeIntegrityMismatch, "dockerarchive.layer", fmt.Errorf("diff id mismatch for %q", layerName))
 			}
 			if _, shouldEmbed := embedded[rawDigest]; shouldEmbed {
@@ -364,6 +379,9 @@ func gzipBlob(ctx context.Context, sourcePath, blobsDir string) (oci.Digest, int
 	fileCloseErr := temporary.Close()
 	if copyErr != nil || gzipCloseErr != nil || inputCloseErr != nil || fileCloseErr != nil {
 		_ = os.Remove(temporaryName)
+		if contextErr := contextError(ctx, "dockerarchive.gzip"); contextErr != nil {
+			return "", 0, contextErr
+		}
 		return "", 0, archiveError(lpkgo.CodeCommandFailed, "dockerarchive.gzip", errors.Join(copyErr, gzipCloseErr, inputCloseErr, fileCloseErr))
 	}
 	digest, err := oci.ParseDigest(fmt.Sprintf("sha256:%x", hasher.Sum(nil)))
@@ -386,7 +404,7 @@ func gzipBlob(ctx context.Context, sourcePath, blobsDir string) (oci.Digest, int
 	return digest, counter.written, nil
 }
 
-func inspectDockerLayer(ctx context.Context, filename string) (inspectedLayer, error) {
+func inspectDockerLayer(ctx context.Context, filename string, maxDecompressedBytes int64) (inspectedLayer, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return inspectedLayer{}, archiveError(lpkgo.CodeCommandFailed, "dockerarchive.inspect_layer", err)
@@ -405,10 +423,19 @@ func inspectDockerLayer(ctx context.Context, filename string) (inspectedLayer, e
 	compressed := read == len(head) && head[0] == 0x1f && head[1] == 0x8b
 	if !compressed {
 		diffID, err := digestFile(ctx, filename)
-		return inspectedLayer{diffID: diffID, blobDigest: diffID, archiveBytes: info.Size()}, err
+		if err != nil {
+			if contextErr := contextError(ctx, "dockerarchive.inspect_layer"); contextErr != nil {
+				return inspectedLayer{}, contextErr
+			}
+			return inspectedLayer{}, archiveError(lpkgo.CodeCommandFailed, "dockerarchive.inspect_layer", err)
+		}
+		return inspectedLayer{diffID: diffID, blobDigest: diffID, archiveBytes: info.Size(), uncompressedBytes: info.Size()}, nil
 	}
 	blobDigest, err := digestFile(ctx, filename)
 	if err != nil {
+		if contextErr := contextError(ctx, "dockerarchive.inspect_layer"); contextErr != nil {
+			return inspectedLayer{}, contextErr
+		}
 		return inspectedLayer{}, archiveError(lpkgo.CodeCommandFailed, "dockerarchive.inspect_layer", err)
 	}
 	input, err := os.Open(filename)
@@ -418,20 +445,34 @@ func inspectDockerLayer(ctx context.Context, filename string) (inspectedLayer, e
 	decompressed, err := gzip.NewReader(&contextReader{ctx: ctx, reader: input})
 	if err != nil {
 		_ = input.Close()
+		if contextErr := contextError(ctx, "dockerarchive.inspect_layer"); contextErr != nil {
+			return inspectedLayer{}, contextErr
+		}
 		return inspectedLayer{}, archiveError(lpkgo.CodeInvalidConfig, "dockerarchive.inspect_layer", err)
 	}
 	hasher := sha256.New()
-	_, copyErr := io.Copy(hasher, decompressed)
+	limited := &io.LimitedReader{R: decompressed, N: maxDecompressedBytes}
+	decompressedBytes, copyErr := io.Copy(hasher, limited)
+	extraBytes, extraErr := io.CopyN(io.Discard, decompressed, 1)
 	gzipCloseErr := decompressed.Close()
 	inputCloseErr := input.Close()
-	if copyErr != nil || gzipCloseErr != nil || inputCloseErr != nil {
-		return inspectedLayer{}, archiveError(lpkgo.CodeInvalidConfig, "dockerarchive.inspect_layer", errors.Join(copyErr, gzipCloseErr, inputCloseErr))
+	if copyErr != nil || (extraErr != nil && !errors.Is(extraErr, io.EOF)) || gzipCloseErr != nil || inputCloseErr != nil {
+		if contextErr := contextError(ctx, "dockerarchive.inspect_layer"); contextErr != nil {
+			return inspectedLayer{}, contextErr
+		}
+		return inspectedLayer{}, archiveError(lpkgo.CodeInvalidConfig, "dockerarchive.inspect_layer", errors.Join(copyErr, extraErr, gzipCloseErr, inputCloseErr))
+	}
+	if extraBytes != 0 {
+		return inspectedLayer{}, archiveError(lpkgo.CodeInvalidConfig, "dockerarchive.inspect_layer", errors.New("decompressed layer exceeds file size limit"))
 	}
 	diffID, err := oci.ParseDigest(fmt.Sprintf("sha256:%x", hasher.Sum(nil)))
 	if err != nil {
 		return inspectedLayer{}, archiveError(lpkgo.CodeIntegrityMismatch, "dockerarchive.inspect_layer", err)
 	}
-	return inspectedLayer{diffID: diffID, compressed: true, blobDigest: blobDigest, archiveBytes: info.Size()}, nil
+	return inspectedLayer{
+		diffID: diffID, compressed: true, blobDigest: blobDigest,
+		archiveBytes: info.Size(), uncompressedBytes: decompressedBytes,
+	}, nil
 }
 
 func copyBlob(ctx context.Context, sourcePath, blobsDir string, expected oci.Digest, expectedSize int64) error {
@@ -458,6 +499,9 @@ func copyBlob(ctx context.Context, sourcePath, blobsDir string, expected oci.Dig
 	actual, digestErr := oci.ParseDigest(fmt.Sprintf("sha256:%x", hasher.Sum(nil)))
 	if copyErr != nil || inputCloseErr != nil || fileCloseErr != nil || digestErr != nil {
 		_ = os.Remove(temporaryName)
+		if contextErr := contextError(ctx, "dockerarchive.copy_blob"); contextErr != nil {
+			return contextErr
+		}
 		return archiveError(lpkgo.CodeIntegrityMismatch, "dockerarchive.copy_blob", errors.Join(copyErr, inputCloseErr, fileCloseErr, digestErr))
 	}
 	if written != expectedSize || actual != expected {
@@ -535,6 +579,9 @@ func normalizeLimits(limits Limits) Limits {
 	if limits.MaxFileBytes <= 0 {
 		limits.MaxFileBytes = defaultMaxFileBytes
 	}
+	if limits.MaxExpandedBytes <= 0 {
+		limits.MaxExpandedBytes = defaultMaxExpandedBytes
+	}
 	if limits.MaxArchiveBytes <= 0 {
 		limits.MaxArchiveBytes = defaultMaxArchiveBytes
 	}
@@ -583,7 +630,11 @@ func contextError(ctx context.Context, op string) error {
 		return archiveError(lpkgo.CodeInvalidArgument, op, errors.New("nil context"))
 	}
 	if err := ctx.Err(); err != nil {
-		return archiveError(lpkgo.CodeCancelled, op, err)
+		code := lpkgo.CodeCancelled
+		if errors.Is(err, context.DeadlineExceeded) {
+			code = lpkgo.CodeDeadlineExceeded
+		}
+		return archiveError(code, op, err)
 	}
 	return nil
 }

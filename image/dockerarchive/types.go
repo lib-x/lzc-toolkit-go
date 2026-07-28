@@ -13,9 +13,14 @@ type Spec struct {
 }
 
 type Limits struct {
-	MaxEntries      int
-	MaxFileBytes    int64
-	MaxArchiveBytes int64
+	MaxEntries int
+	// MaxFileBytes limits both stored archive entries and the decompressed
+	// content used to verify an already-gzipped Docker layer.
+	MaxFileBytes int64
+	// MaxExpandedBytes limits the cumulative decompressed size of distinct
+	// Docker layer paths inspected during conversion.
+	MaxExpandedBytes int64
+	MaxArchiveBytes  int64
 }
 
 type Request struct {

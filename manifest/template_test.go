@@ -108,6 +108,39 @@ func TestAnalyzeSupportsInlineConditionAroundWholeSequenceItem(t *testing.T) {
 	}
 }
 
+func TestAnalyzeDoesNotPromoteInlineControlInsideBlockScalar(t *testing.T) {
+	t.Parallel()
+	for _, header := range []string{
+		"script: |- # runtime script",
+		"script: &runtime >+",
+		"script: !!str |-",
+	} {
+		header := header
+		t.Run(header, func(t *testing.T) {
+			t.Parallel()
+			source := []byte(header + "\n  {{if .U.enabled}}echo enabled{{end}}\n")
+			analysis, err := manifest.Analyze(source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, found, err := analysis.StaticScalar("script"); err != nil || found {
+				t.Fatalf("StaticScalar(script) = (_, %t, %v), want templated", found, err)
+			}
+			projected, err := analysis.Document().Bytes()
+			if err != nil {
+				t.Fatal(err)
+			}
+			restored, err := analysis.Restore(projected)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Contains(restored, []byte("{{if .U.enabled}}echo enabled{{end}}")) {
+				t.Fatalf("inline block scalar control changed shape:\n%s", restored)
+			}
+		})
+	}
+}
+
 func TestAnalyzePlainYAMLReturnsIndependentDocument(t *testing.T) {
 	t.Parallel()
 	analysis, err := manifest.Analyze([]byte("application:\n  subdomain: original\n"))
