@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUT="$ROOT/testdata/upstream/2.0.8"
+OUT="$ROOT/testdata/upstream/2.0.9"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -16,7 +16,7 @@ mkdir -p "$NPM_PROJECT" "$V1_DIR" "$V2_DIR" "$RESOURCE_DIR" "$KEY_DIR" "$OUT"
 
 cd "$NPM_PROJECT"
 npm init -y >/dev/null
-npm install --save-exact @lazycatcloud/lzc-cli@2.0.8 >/dev/null
+npm install --save-exact @lazycatcloud/lzc-cli@2.0.9 >/dev/null
 
 cat >"$V1_DIR/lzc-build.yml" <<'YAML'
 manifest: lzc-manifest.yml
@@ -89,12 +89,12 @@ npx --no-install lzc-cli lpk sign "$OUT/v2-simple.lpk" \
 cd "$ROOT"
 {
 	cat <<'MARKDOWN'
-# lzc-cli 2.0.8 upstream fixtures
+# lzc-cli 2.0.9 upstream fixtures
 
-Generated from npm package `@lazycatcloud/lzc-cli@2.0.8`.
+Generated from npm package `@lazycatcloud/lzc-cli@2.0.9`.
 
-- integrity: `sha512-CcH18fg1SBqTN4od7NCXMWYaAwjICgEuguphgNcb9Lp7v5+RDYa27+BEevC7faFFm8Zhjw3Rh/sinYc7fc39SA==`
-- shasum: `af9fece8a9756a00e093f817b3c3083971cc171f`
+- integrity: `sha512-L+DUKBD5HrFctnqZ4a8vofXY7f5+4ukpfw4rSnNbeE9s48lsLOr3vvbaWZCDSR6xkivRYTovQMWKqcli6s8mUQ==`
+- shasum: `88a3847bbd1c0c2e709cbc7a96fae52f9f832a85`
 
 Regenerate with:
 

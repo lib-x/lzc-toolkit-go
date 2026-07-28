@@ -24,7 +24,7 @@ type iconOption struct {
 }
 
 // ImageBuild describes the subset of lzc-build.yml images.<alias> used by
-// lzc-cli 2.0.8 official publish linting.
+// lzc-cli 2.0.9 official publish linting.
 type ImageBuild struct {
 	UpstreamMatch string
 }
@@ -44,7 +44,7 @@ type EmbeddedLayer struct {
 
 // WithOfficial enables LazyCat official/developer-platform lint warnings.
 //
-// These warnings mirror lzc-cli 2.0.8 store/pre-publish preferences such as
+// These warnings mirror lzc-cli 2.0.9 store/pre-publish preferences such as
 // registry.lazycat.cloud image refs, icon size, locales, and semver. They are
 // disabled by default because they do not necessarily indicate an uninstallable
 // LPK package.

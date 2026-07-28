@@ -1,5 +1,5 @@
 // Package auth implements the LazyCat account token contract used by
-// lzc-cli 2.0.8 without interactive prompts.
+// lzc-cli 2.0.9 without interactive prompts.
 package auth
 
 import "context"

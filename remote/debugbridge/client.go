@@ -1,5 +1,5 @@
 // Package debugbridge implements the LazyCat Developer Tools DebugBridge
-// protocol used by lzc-cli 2.0.8.
+// protocol used by lzc-cli 2.0.9.
 package debugbridge
 
 import (

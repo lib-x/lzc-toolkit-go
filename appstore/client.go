@@ -1,5 +1,5 @@
 // Package appstore implements LazyCat developer platform APIs used by
-// lzc-cli 2.0.8. It does not execute Docker commands.
+// lzc-cli 2.0.9. It does not execute Docker commands.
 package appstore
 
 import (

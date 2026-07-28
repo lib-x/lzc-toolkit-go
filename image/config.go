@@ -38,7 +38,7 @@ type Entry struct {
 
 var aliasPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
-// Normalize validates and resolves the lzc-cli 2.0.8 images configuration.
+// Normalize validates and resolves the lzc-cli 2.0.9 images configuration.
 func Normalize(ctx context.Context, root string, appManifest manifest.Manifest, raw any) ([]Entry, error) {
 	if err := contextError(ctx, "image.normalize"); err != nil {
 		return nil, err

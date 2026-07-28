@@ -17,7 +17,7 @@ import (
 //
 // By default this reports package/manifest compatibility warnings only. Pass
 // WithOfficial to additionally report LazyCat official/developer-platform
-// pre-publish warnings, matching lzc-cli 2.0.8's lpk lint distinction where
+// pre-publish warnings, matching lzc-cli 2.0.9's lpk lint distinction where
 // official registry, icon, locales, and semver rules are warnings rather than
 // package construction errors.
 func Package(ctx context.Context, root fs.FS, optionValues ...Option) ([]lpkgo.Warning, error) {

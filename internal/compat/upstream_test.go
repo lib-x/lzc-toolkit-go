@@ -83,5 +83,5 @@ func fixtureDir(t *testing.T) string {
 		t.Fatal("runtime.Caller failed")
 	}
 	repo := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
-	return filepath.Join(repo, "testdata", "upstream", "2.0.8")
+	return filepath.Join(repo, "testdata", "upstream", "2.0.9")
 }

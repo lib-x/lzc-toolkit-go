@@ -27,7 +27,7 @@ type ResourceExport struct {
 	Source string `yaml:"source"`
 }
 
-// Config is the lzc-build.yml surface supported by lzc-cli 2.0.8.
+// Config is the lzc-build.yml surface supported by lzc-cli 2.0.9.
 type Config struct {
 	BuildScript      string           `yaml:"buildscript,omitempty"`
 	Manifest         string           `yaml:"manifest,omitempty"`

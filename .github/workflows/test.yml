@@ -100,7 +100,7 @@ jobs:
           mkdir -p "$npm_project"
           cd "$npm_project"
           npm init -y >/dev/null
-          npm install --save-exact @lazycatcloud/lzc-cli@2.0.8 >/dev/null
+          npm install --save-exact @lazycatcloud/lzc-cli@2.0.9 >/dev/null
           npx --no-install lzc-cli lpk info "$tmp/go-v1.lpk"
           npx --no-install lzc-cli lpk info "$tmp/go-v2.lpk"
           npx --no-install lzc-cli lpk lint "$tmp/go-v1.lpk"

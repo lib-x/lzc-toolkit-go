@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	// OfficialIconMaxBytes is lzc-cli 2.0.8's App Store icon limit.
+	// OfficialIconMaxBytes is lzc-cli 2.0.9's App Store icon limit.
 	OfficialIconMaxBytes = 200 * 1024
-	// OfficialImageRegistryPrefix is lzc-cli 2.0.8's official image prefix.
+	// OfficialImageRegistryPrefix is lzc-cli 2.0.9's official image prefix.
 	OfficialImageRegistryPrefix = "registry.lazycat.cloud"
 )
 

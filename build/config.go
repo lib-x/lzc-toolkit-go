@@ -16,7 +16,7 @@ import (
 var envKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // LoadConfig loads and normalizes an lzc-build configuration. In accordance
-// with lzc-cli 2.0.8, lzc-build.dev.yml inherits lzc-build.yml using top-level
+// with lzc-cli 2.0.9, lzc-build.dev.yml inherits lzc-build.yml using top-level
 // replacement; other filenames do not have an implicit parent.
 func LoadConfig(ctx context.Context, root, configFile string, environment map[string]string) (LoadedConfig, error) {
 	if err := checkContext(ctx, "build.load_config"); err != nil {

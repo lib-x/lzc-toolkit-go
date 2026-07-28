@@ -34,7 +34,7 @@ type APKResult struct {
 }
 
 // TriggerAPK requests generation of the latest Android APK shell for an app.
-// It follows lzc-cli 2.0.8 and does not authenticate this endpoint. Caller-
+// It follows lzc-cli 2.0.9 and does not authenticate this endpoint. Caller-
 // owned Icon readers are never closed.
 func (client *Client) TriggerAPK(ctx context.Context, input APKRequest) (APKResult, error) {
 	if ctx == nil || client == nil || client.httpClient == nil {

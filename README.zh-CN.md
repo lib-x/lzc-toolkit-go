@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-`lzc-toolkit-go` 是一个用于构建、读取、检查、签名、部署和发布 LazyCat LPK 的 Go 库。它参考 `@lazycatcloud/lzc-cli` `2.0.8` 的源码和服务端协议实现，但不会复制 lzc-cli 的命令行交互。
+`lzc-toolkit-go` 是一个用于构建、读取、检查、签名、部署和发布 LazyCat LPK 的 Go 库。它参考 `@lazycatcloud/lzc-cli` `2.0.9` 的源码和服务端协议实现，但不会复制 lzc-cli 的命令行交互。
 
 如果你第一次接触 LazyCat，可以先把它理解为一组可组合的底层能力：你的程序决定什么时候构建、用哪种镜像后端、凭据从哪里来，以及结果如何进入自己的 CI/CD。
 
@@ -334,7 +334,7 @@ func main() {
 builder := dockerlocal.New(nil, dockerlocal.WithPlatform("linux/arm64"))
 ```
 
-构建器会运行与 lzc-cli 2.0.8 兼容的 `docker buildx build --load`、`docker image inspect` 和 `docker image save` 流程，然后把结果转换成 LPK v2 的 OCI 布局。最终包中的 `images.lock` 描述镜像和层，`images/` 只保存需要内嵌的 blob。Manifest 中的 `embed:app` 会附加解析后的镜像摘要。
+构建器会运行与 lzc-cli 2.0.9 兼容的 `docker buildx build --load`、`docker image inspect` 和 `docker image save` 流程，然后把结果转换成 LPK v2 的 OCI 布局。Docker 29 通过 `Id` 返回 Manifest descriptor 时，构建器会从保存的归档中还原 config JSON 摘要；已经 gzip 压缩的 layer 会保留原始压缩字节。最终包中的 `images.lock` 描述镜像和层，`images/` 只保存需要内嵌的 blob。Manifest 中的 `embed:app` 会附加解析后的镜像摘要。
 
 常见错误：
 
@@ -346,7 +346,7 @@ builder := dockerlocal.New(nil, dockerlocal.WithPlatform("linux/arm64"))
 
 这里的“预览”是指：源码保留在本地编辑，镜像和服务在懒猫或 build-remote 主机侧运行，然后从 LazyCat 客户端打开应用。
 
-当前 DebugBridge 不会把你电脑上监听的 `localhost:3000` 直接反向暴露给懒猫。要预览本机进程，需要另行配置反向隧道或代理，这不是当前 SDK 和 lzc-cli 2.0.8 的 DebugBridge 能力。
+当前 DebugBridge 不会把你电脑上监听的 `localhost:3000` 直接反向暴露给懒猫。要预览本机进程，需要另行配置反向隧道或代理，这不是当前 SDK 和 lzc-cli 2.0.9 的 DebugBridge 能力。
 
 前置条件：
 
@@ -549,7 +549,7 @@ func main() {
 
 返回的 `LazyCatImage` 是可写入应用配置的 `registry.lazycat.cloud/...` 地址。返回值还保留源镜像、目标平台和最终分层进度，CI/CD 不需要解析终端日志。
 
-当前 lzc-cli 2.0.8 和本 SDK 的 `CopyImageRequest` 没有源 Registry 用户名、密码或 token 字段。如果源镜像需要认证，调用方不能通过这个接口额外传入私有 Registry 凭据，必须先确认开发者平台能够拉取该镜像。
+当前 lzc-cli 2.0.9 和本 SDK 的 `CopyImageRequest` 没有源 Registry 用户名、密码或 token 字段。如果源镜像需要认证，调用方不能通过这个接口额外传入私有 Registry 凭据，必须先确认开发者平台能够拉取该镜像。
 
 ### 例子五：登录并提交 LPK
 
@@ -605,7 +605,7 @@ SDK 支持三种常用来源：
 - `auth.EnvironmentToken`：默认读取 `LZC_CLI_TOKEN`。
 - `auth.StoreProvider`：从显式 `TokenStore` 读取。
 
-如果本机已经通过 lzc-cli 登录，lzc-cli 2.0.8 的读取顺序是：
+如果本机已经通过 lzc-cli 登录，lzc-cli 2.0.9 的读取顺序是：
 
 1. 如果存在 `LZC_CLI_TOKEN`，使用环境变量。
 2. 否则读取 `~/.config/lazycat/box-config.json` 的 `token` 字段。
@@ -774,7 +774,7 @@ warnings, err := lint.Package(
 | 发现默认微服和 `dev.id` | LazyCat 客户端的 `shellapi_addr`、`shellapi_cred` |
 | build-remote、DebugBridge、部署 | 目标主机 SSH 授权和 LazyCat UID |
 | 镜像复制、应用创建、Testflight、LPK 提交 | 开发者平台 token |
-| APK Shell 触发接口 | 与 lzc-cli 2.0.8 一样，不需要 App Store token |
+| APK Shell 触发接口 | 与 lzc-cli 2.0.9 一样，不需要 App Store token |
 
 ShellAPI 配置的默认位置：
 
@@ -852,7 +852,7 @@ _, _ = signed, verified
 
 - `ListImages`：列出已经复制到 LazyCat Registry 的镜像记录。
 - Testflight 相关接口：发布和管理内测版本。
-- `TriggerAPK`：调用 lzc-cli 2.0.8 的匿名 Android APK Shell multipart 接口，默认超时 5 秒。
+- `TriggerAPK`：调用 lzc-cli 2.0.9 的匿名 Android APK Shell multipart 接口，默认超时 5 秒。
 
 ### 常见错误码
 
@@ -874,9 +874,9 @@ _, _ = signed, verified
 实现基线：
 
 - 软件包：`@lazycatcloud/lzc-cli`
-- 版本：`2.0.8`
-- integrity：`sha512-CcH18fg1SBqTN4od7NCXMWYaAwjICgEuguphgNcb9Lp7v5+RDYa27+BEevC7faFFm8Zhjw3Rh/sinYc7fc39SA==`
-- shasum：`af9fece8a9756a00e093f817b3c3083971cc171f`
+- 版本：`2.0.9`
+- integrity：`sha512-L+DUKBD5HrFctnqZ4a8vofXY7f5+4ukpfw4rSnNbeE9s48lsLOr3vvbaWZCDSR6xkivRYTovQMWKqcli6s8mUQ==`
+- shasum：`88a3847bbd1c0c2e709cbc7a96fae52f9f832a85`
 
 SDK 以 lzc-cli 的文件格式和服务端协议语义为兼容目标，不要求生成字节完全相同的归档文件。SDK 自身的版本信息和参考 lzc-cli 版本可以从 `version` 包读取，便于后续兼容升级。
 
