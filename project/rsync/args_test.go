@@ -61,6 +61,7 @@ func TestBuildTunnelArgsPreservesSSHOptions(t *testing.T) {
 	}
 	want := []string{
 		"-o", "StrictHostKeyChecking=no", "-p", "2222",
+		"-o", "ControlMaster=no", "-o", "ControlPath=none",
 		"-o", "ExitOnForwardFailure=yes", "-L", "127.0.0.1:19000:[fd00::8]:874",
 		"developer@box.example", "-N",
 	}

@@ -70,7 +70,12 @@ func BuildTunnelArgs(options TunnelOptions) ([]string, error) {
 	}
 	args := append([]string(nil), options.SSHArgs[:len(options.SSHArgs)-1]...)
 	forward := "127.0.0.1:" + strconv.Itoa(options.LocalPort) + ":" + formatHost(host) + ":" + strconv.Itoa(targetPort)
-	args = append(args, "-o", "ExitOnForwardFailure=yes", "-L", forward, sshTarget, "-N")
+	args = append(args,
+		"-o", "ControlMaster=no",
+		"-o", "ControlPath=none",
+		"-o", "ExitOnForwardFailure=yes",
+		"-L", forward, sshTarget, "-N",
+	)
 	return args, nil
 }
 
