@@ -664,6 +664,34 @@ func main() {
 
 `Publish` does not close `packageFile`. To permit automatic application creation, set `CreateIfMissing: true` and provide `Application`; the library never asks interactively.
 
+For a first official information submission, query the authenticated developer state instead of guessing from the public catalog. `ApplicationState` distinguishes a missing application, approved information, and an existing pending review:
+
+```go
+state, err := client.ApplicationState(ctx, "cloud.lazycat.example")
+if err != nil {
+    return err
+}
+if state.ReviewPending {
+    return errors.New("an official review is already pending")
+}
+```
+
+Screenshot processing lives in the separate `appstore/media` package. It reads only a project-relative PNG or JPEG regular file, rejects paths outside the project root and symbolic links, enforces a 15 MiB and 320-3840 pixel boundary, center-crops to 16:9, and returns a bounded ASCII-named PNG:
+
+```go
+asset, err := media.NormalizeFile(ctx, projectRoot, ".github/screenshots/pc-1.png")
+if err != nil {
+    return err
+}
+uploadedPath, err := client.UploadApplicationImage(
+    ctx,
+    bytes.NewReader(asset.Data),
+    asset.FileName,
+)
+```
+
+Pass the returned developer-platform paths through `PublishRequest.ApplicationInfos`. Desktop information requires 2-8 screenshots and mobile information requires 3-8. Do not submit information again when `InformationReady` is true, and stop before uploading when `ReviewPending` is true.
+
 An official submission usually also requires:
 
 - Images from `registry.lazycat.cloud` or valid embedded images.

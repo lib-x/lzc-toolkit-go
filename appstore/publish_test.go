@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -89,6 +90,128 @@ func TestPublishRunsOfficialPrecheckCreateUploadAndReview(t *testing.T) {
 	}
 	if packageReader.closed {
 		t.Fatal("Publish closed caller-owned package reader")
+	}
+}
+
+func TestPublishIncludesApplicationInfoInReview(t *testing.T) {
+	packageData := publishLPK(t)
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/v3/developer/app/check/exist":
+			_, _ = response.Write([]byte(`{"exist":true}`))
+		case "/api/v3/developer/app/lpk/upload":
+			if err := request.ParseMultipartForm(2 << 20); err != nil {
+				t.Error(err)
+			}
+			_, _ = response.Write([]byte(validUploadResponse()))
+		case "/api/v3/developer/app/cloud.lazycat.apps.publish-demo/review/create":
+			var body struct {
+				Infos []appstore.ApplicationInfo `json:"infos"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Error(err)
+			}
+			if len(body.Infos) != 1 {
+				t.Fatalf("infos=%#v", body.Infos)
+			}
+			info := body.Infos[0]
+			if info.ID != 0 || info.Language != "zh" || info.Name != "Publish Demo" || info.Brief != "A collaborative workspace" || !info.SupportPC || info.SupportMobile {
+				t.Fatalf("info=%#v", info)
+			}
+			if strings.Join(info.ScreenshotPCPaths, ",") != "/screens/one.png,/screens/two.png" {
+				t.Fatalf("screenshots=%v", info.ScreenshotPCPaths)
+			}
+			_, _ = response.Write([]byte(`{"success":true,"review":"queued"}`))
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer server.Close()
+	client := appstore.New(appstore.Options{BaseURL: server.URL, HTTPClient: server.Client(), Token: auth.StaticToken("ci-token")})
+
+	_, err := client.Publish(context.Background(), appstore.PublishRequest{
+		Package: bytes.NewReader(packageData), Changelogs: map[string]string{"zh": "release notes"},
+		ApplicationInfos: []appstore.ApplicationInfo{{
+			Language: "zh", Name: "Publish Demo", Brief: "A collaborative workspace", SupportPC: true,
+			ScreenshotPCPaths: []string{"/screens/one.png", "/screens/two.png"},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPublishRejectsInvalidApplicationInformationBeforeReadingPackage(t *testing.T) {
+	tests := []struct {
+		name string
+		info appstore.ApplicationInfo
+	}{
+		{name: "unsupported desktop screenshots", info: appstore.ApplicationInfo{Language: "zh", Name: "Demo", Brief: "Brief", SupportMobile: true, ScreenshotPCPaths: []string{"/one.png"}, ScreenshotMobilePaths: []string{"/one.png", "/two.png", "/three.png"}}},
+		{name: "empty screenshot path", info: appstore.ApplicationInfo{Language: "zh", Name: "Demo", Brief: "Brief", SupportPC: true, ScreenshotPCPaths: []string{"/one.png", " "}}},
+		{name: "control in screenshot path", info: appstore.ApplicationInfo{Language: "zh", Name: "Demo", Brief: "Brief", SupportPC: true, ScreenshotPCPaths: []string{"/one.png", "/two.png\r\n"}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			reader := &publishTrackingReader{Reader: strings.NewReader("not-an-lpk")}
+			client := appstore.New(appstore.Options{Token: auth.StaticToken("ci-token")})
+			_, err := client.Publish(context.Background(), appstore.PublishRequest{
+				Package: reader, Changelogs: map[string]string{"zh": "notes"}, ApplicationInfos: []appstore.ApplicationInfo{test.info},
+			})
+			if !errors.Is(err, lpkgo.ErrInvalidArgument) {
+				t.Fatalf("err=%v", err)
+			}
+		})
+	}
+}
+
+func TestUploadApplicationImageUsesAuthenticatedMultipartAndWrappedResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/v3/developer/upload" || request.Method != http.MethodPost {
+			t.Fatalf("request=%s %s", request.Method, request.URL.Path)
+		}
+		if request.Header.Get("X-User-Token") != "ci-token" {
+			t.Fatal("missing auth header")
+		}
+		if err := request.ParseMultipartForm(1 << 20); err != nil {
+			t.Fatal(err)
+		}
+		file, header, err := request.FormFile("file")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer file.Close()
+		data, err := io.ReadAll(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if header.Filename != "screen.png" || !bytes.Equal(data, []byte("png-data")) {
+			t.Fatalf("filename=%q data=%q", header.Filename, data)
+		}
+		_, _ = response.Write([]byte(`{"success":true,"data":{"url":"/appstore/screens/screen.png"}}`))
+	}))
+	defer server.Close()
+	client := appstore.New(appstore.Options{BaseURL: server.URL, HTTPClient: server.Client(), Token: auth.StaticToken("ci-token")})
+
+	path, err := client.UploadApplicationImage(context.Background(), bytes.NewReader([]byte("png-data")), "screen.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != "/appstore/screens/screen.png" {
+		t.Fatalf("path=%q", path)
+	}
+}
+
+func TestUploadApplicationImageRejectsUnsafeFilenameBeforeRequest(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("unsafe filename must not reach the server")
+	}))
+	defer server.Close()
+	client := appstore.New(appstore.Options{BaseURL: server.URL, HTTPClient: server.Client(), Token: auth.StaticToken("ci-token")})
+
+	for _, name := range []string{"../screen.png", "screen\r\nX-Test.png", "截图.png", "screen.gif"} {
+		if _, err := client.UploadApplicationImage(context.Background(), bytes.NewReader([]byte("png-data")), name); !errors.Is(err, lpkgo.ErrInvalidArgument) {
+			t.Fatalf("name=%q err=%v", name, err)
+		}
 	}
 }
 

@@ -28,13 +28,29 @@ type CreateApplicationRequest struct {
 	SourceAuthor string `json:"source_author,omitempty"`
 }
 
+type ApplicationInfo struct {
+	ID                    int      `json:"id"`
+	Language              string   `json:"language"`
+	Name                  string   `json:"name"`
+	Brief                 string   `json:"brief"`
+	Description           string   `json:"description,omitempty"`
+	Keywords              string   `json:"keywords,omitempty"`
+	Source                string   `json:"source,omitempty"`
+	SourceAuthor          string   `json:"source_author,omitempty"`
+	SupportPC             bool     `json:"support_pc"`
+	SupportMobile         bool     `json:"support_mobile"`
+	ScreenshotPCPaths     []string `json:"screenshot_pc_paths"`
+	ScreenshotMobilePaths []string `json:"screenshot_mobile_paths"`
+}
+
 type PublishRequest struct {
-	Package         io.Reader
-	FileName        string
-	Changelogs      map[string]string
-	CreateIfMissing bool
-	Application     *CreateApplicationRequest
-	MaxPackageBytes int64
+	Package          io.Reader
+	FileName         string
+	Changelogs       map[string]string
+	CreateIfMissing  bool
+	Application      *CreateApplicationRequest
+	ApplicationInfos []ApplicationInfo
+	MaxPackageBytes  int64
 }
 
 type UploadInfo struct {
@@ -63,6 +79,9 @@ func (client *Client) Publish(ctx context.Context, input PublishRequest) (Publis
 		if strings.TrimSpace(locale) == "" || strings.TrimSpace(changelog) == "" {
 			return PublishResult{}, storeError(lpkgo.CodeInvalidArgument, "appstore.publish", errors.New("changelog locale and content are required"))
 		}
+	}
+	if err := validateApplicationInfos(input.ApplicationInfos); err != nil {
+		return PublishResult{}, err
 	}
 	work, err := os.MkdirTemp("", "lpk-publish-*")
 	if err != nil {
@@ -113,6 +132,7 @@ func (client *Client) Publish(ctx context.Context, input PublishRequest) (Publis
 		return PublishResult{}, storeRemoteError("appstore.publish_upload", errors.New("upload response package does not match LPK"), http.StatusOK)
 	}
 	reviewBody := struct {
+		Infos   []ApplicationInfo `json:"infos,omitempty"`
 		Version struct {
 			Package              string            `json:"package"`
 			Name                 string            `json:"name"`
@@ -126,6 +146,7 @@ func (client *Client) Publish(ctx context.Context, input PublishRequest) (Publis
 			Changelogs           map[string]string `json:"changelogs"`
 		} `json:"version"`
 	}{}
+	reviewBody.Infos = cloneApplicationInfos(input.ApplicationInfos)
 	reviewBody.Version.Package = upload.Package
 	reviewBody.Version.Name = upload.Version
 	reviewBody.Version.IconPath = upload.IconPath
@@ -151,6 +172,56 @@ func (client *Client) Publish(ctx context.Context, input PublishRequest) (Publis
 	result.Upload = upload
 	result.Response = append(json.RawMessage(nil), response...)
 	return result, nil
+}
+
+func validateApplicationInfos(infos []ApplicationInfo) error {
+	for _, information := range infos {
+		if strings.TrimSpace(information.Language) == "" || strings.TrimSpace(information.Name) == "" || strings.TrimSpace(information.Brief) == "" {
+			return storeError(lpkgo.CodeInvalidArgument, "appstore.publish", errors.New("application information language, name, and brief are required"))
+		}
+		if !information.SupportPC && !information.SupportMobile {
+			return storeError(lpkgo.CodeInvalidArgument, "appstore.publish", errors.New("application information must support desktop or mobile"))
+		}
+		if information.SupportPC && len(information.ScreenshotPCPaths) < 2 {
+			return storeError(lpkgo.CodeInvalidArgument, "appstore.publish", errors.New("desktop application information requires at least two screenshots"))
+		}
+		if information.SupportMobile && len(information.ScreenshotMobilePaths) < 3 {
+			return storeError(lpkgo.CodeInvalidArgument, "appstore.publish", errors.New("mobile application information requires at least three screenshots"))
+		}
+		if !information.SupportPC && len(information.ScreenshotPCPaths) > 0 || !information.SupportMobile && len(information.ScreenshotMobilePaths) > 0 {
+			return storeError(lpkgo.CodeInvalidArgument, "appstore.publish", errors.New("application information contains screenshots for an unsupported platform"))
+		}
+		if len(information.ScreenshotPCPaths) > 8 || len(information.ScreenshotMobilePaths) > 8 {
+			return storeError(lpkgo.CodeInvalidArgument, "appstore.publish", errors.New("application information supports at most eight screenshots per platform"))
+		}
+		if !validApplicationScreenshotPaths(information.ScreenshotPCPaths) || !validApplicationScreenshotPaths(information.ScreenshotMobilePaths) {
+			return storeError(lpkgo.CodeInvalidArgument, "appstore.publish", errors.New("application screenshot paths are invalid"))
+		}
+	}
+	return nil
+}
+
+func validApplicationScreenshotPaths(paths []string) bool {
+	for _, path := range paths {
+		trimmed := strings.TrimSpace(path)
+		if trimmed == "" || path != trimmed || len(path) > 4096 || strings.ContainsAny(path, "\r\n\x00") {
+			return false
+		}
+	}
+	return true
+}
+
+func cloneApplicationInfos(source []ApplicationInfo) []ApplicationInfo {
+	if len(source) == 0 {
+		return nil
+	}
+	result := make([]ApplicationInfo, len(source))
+	copy(result, source)
+	for index := range result {
+		result[index].ScreenshotPCPaths = append([]string(nil), source[index].ScreenshotPCPaths...)
+		result[index].ScreenshotMobilePaths = append([]string(nil), source[index].ScreenshotMobilePaths...)
+	}
+	return result
 }
 
 func (client *Client) CheckApplication(ctx context.Context, packageID string) (bool, error) {
