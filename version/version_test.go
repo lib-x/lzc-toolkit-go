@@ -7,16 +7,16 @@ import (
 
 func TestCurrentReferenceMetadata(t *testing.T) {
 	got := Current()
-	if got.SDKVersion != "0.3.3" {
+	if got.SDKVersion != "0.3.4" {
 		t.Fatalf("SDKVersion = %q", got.SDKVersion)
 	}
-	if got.ReferencePackage != "@lazycatcloud/lzc-cli" || got.ReferenceVersion != "2.0.8" {
+	if got.ReferencePackage != "@lazycatcloud/lzc-cli" || got.ReferenceVersion != "2.0.9" {
 		t.Fatalf("unexpected reference: %#v", got)
 	}
-	if got.ReferenceIntegrity != "sha512-CcH18fg1SBqTN4od7NCXMWYaAwjICgEuguphgNcb9Lp7v5+RDYa27+BEevC7faFFm8Zhjw3Rh/sinYc7fc39SA==" {
+	if got.ReferenceIntegrity != "sha512-L+DUKBD5HrFctnqZ4a8vofXY7f5+4ukpfw4rSnNbeE9s48lsLOr3vvbaWZCDSR6xkivRYTovQMWKqcli6s8mUQ==" {
 		t.Fatalf("ReferenceIntegrity = %q", got.ReferenceIntegrity)
 	}
-	if got.ReferenceShasum != "af9fece8a9756a00e093f817b3c3083971cc171f" {
+	if got.ReferenceShasum != "88a3847bbd1c0c2e709cbc7a96fae52f9f832a85" {
 		t.Fatalf("ReferenceShasum = %q", got.ReferenceShasum)
 	}
 	if !slices.Equal(got.LPKLayouts, []string{"v1", "v2"}) {

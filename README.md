@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-`lzc-toolkit-go` is a Go library for building, reading, inspecting, signing, deploying, and publishing LazyCat LPK packages. It follows the source and service contracts of `@lazycatcloud/lzc-cli` `2.0.8`, but it does not copy the CLI's prompts or terminal behavior.
+`lzc-toolkit-go` is a Go library for building, reading, inspecting, signing, deploying, and publishing LazyCat LPK packages. It follows the source and service contracts of `@lazycatcloud/lzc-cli` `2.0.9`, but it does not copy the CLI's prompts or terminal behavior.
 
 If you are new to LazyCat, think of this repository as a set of composable building blocks. Your program decides when to build, which image backend to use, where credentials come from, and how results enter your CI/CD workflow.
 
@@ -334,7 +334,7 @@ func main() {
 builder := dockerlocal.New(nil, dockerlocal.WithPlatform("linux/arm64"))
 ```
 
-The adapter runs the lzc-cli 2.0.8 compatible `docker buildx build --load`, `docker image inspect`, and `docker image save` flow, then converts the result into the LPK v2 OCI layout. `images.lock` describes the image and its layers; `images/` contains only blobs embedded in the package. The builder appends the resolved image digest to `embed:app`.
+The adapter runs the lzc-cli 2.0.9 compatible `docker buildx build --load`, `docker image inspect`, and `docker image save` flow, then converts the result into the LPK v2 OCI layout. Docker 29 responses that expose a manifest descriptor through `Id` are resolved back to the saved config JSON digest, and already-gzipped saved layers retain their original compressed bytes. `images.lock` describes the image and its layers; `images/` contains only blobs embedded in the package. The builder appends the resolved image digest to `embed:app`.
 
 Common failures:
 
@@ -346,7 +346,7 @@ Common failures:
 
 In this workflow, source editing stays local while images and services run on the LazyCat or build-remote side. You open the resulting app through the normal LazyCat client entry.
 
-DebugBridge does not expose a process listening on your computer's `localhost:3000` to the device. Previewing a local process requires a separate reverse tunnel or proxy; that is not part of the current SDK or lzc-cli 2.0.8 DebugBridge contract.
+DebugBridge does not expose a process listening on your computer's `localhost:3000` to the device. Previewing a local process requires a separate reverse tunnel or proxy; that is not part of the current SDK or lzc-cli 2.0.9 DebugBridge contract.
 
 Prerequisites:
 
@@ -549,7 +549,7 @@ func main() {
 
 `LazyCatImage` is the resulting `registry.lazycat.cloud/...` reference. The result also preserves the source image, selected platform, and final layer state, so CI/CD callers do not need to parse terminal output.
 
-The lzc-cli 2.0.8 and Go SDK `CopyImageRequest` contracts have no source Registry username, password, or token field. Callers cannot add private Registry credentials through this API and must ensure that the developer platform can pull the source image.
+The lzc-cli 2.0.9 and Go SDK `CopyImageRequest` contracts have no source Registry username, password, or token field. Callers cannot add private Registry credentials through this API and must ensure that the developer platform can pull the source image.
 
 ### Example 5: Log in and submit an LPK
 
@@ -605,7 +605,7 @@ The SDK supports:
 - `auth.EnvironmentToken`, which reads `LZC_CLI_TOKEN` by default.
 - `auth.StoreProvider` for an explicit `TokenStore`.
 
-When lzc-cli is already logged in, lzc-cli 2.0.8 resolves the token in this order:
+When lzc-cli is already logged in, lzc-cli 2.0.9 resolves the token in this order:
 
 1. Use `LZC_CLI_TOKEN` when it is set.
 2. Otherwise read the `token` field from `~/.config/lazycat/box-config.json`.
@@ -777,7 +777,7 @@ Official rules are disabled by default because Registry, icon, locale, SemVer, a
 | Discover the default box and `dev.id` | LazyCat client `shellapi_addr` and `shellapi_cred` |
 | build-remote, DebugBridge, deployment | Target-host SSH authorization and LazyCat UID |
 | Image copy, application creation, Testflight, LPK submission | Developer-platform token |
-| APK Shell trigger | No App Store token, matching lzc-cli 2.0.8 |
+| APK Shell trigger | No App Store token, matching lzc-cli 2.0.9 |
 
 Default ShellAPI directories:
 
@@ -857,7 +857,7 @@ _, _ = signed, verified
 
 - `ListImages` to list images copied into LazyCat Registry.
 - Testflight APIs for internal-test releases.
-- `TriggerAPK` for the lzc-cli 2.0.8 anonymous Android APK Shell multipart endpoint, with a five-second default timeout.
+- `TriggerAPK` for the lzc-cli 2.0.9 anonymous Android APK Shell multipart endpoint, with a five-second default timeout.
 
 ### Common error codes
 
@@ -879,9 +879,9 @@ _, _ = signed, verified
 Implementation baseline:
 
 - package: `@lazycatcloud/lzc-cli`
-- version: `2.0.8`
-- integrity: `sha512-CcH18fg1SBqTN4od7NCXMWYaAwjICgEuguphgNcb9Lp7v5+RDYa27+BEevC7faFFm8Zhjw3Rh/sinYc7fc39SA==`
-- shasum: `af9fece8a9756a00e093f817b3c3083971cc171f`
+- version: `2.0.9`
+- integrity: `sha512-L+DUKBD5HrFctnqZ4a8vofXY7f5+4ukpfw4rSnNbeE9s48lsLOr3vvbaWZCDSR6xkivRYTovQMWKqcli6s8mUQ==`
+- shasum: `88a3847bbd1c0c2e709cbc7a96fae52f9f832a85`
 
 The compatibility target is lzc-cli file formats and service-facing semantics. Byte-identical archives are not required. The `version` package reports both this SDK's version and the exact lzc-cli reference version for future compatibility upgrades.
 

@@ -3,11 +3,11 @@ package version
 import "runtime/debug"
 
 const (
-	SDKVersion            = "0.3.3"
+	SDKVersion            = "0.3.4"
 	ReferenceCLIPackage   = "@lazycatcloud/lzc-cli"
-	ReferenceCLIVersion   = "2.0.8"
-	ReferenceCLIIntegrity = "sha512-CcH18fg1SBqTN4od7NCXMWYaAwjICgEuguphgNcb9Lp7v5+RDYa27+BEevC7faFFm8Zhjw3Rh/sinYc7fc39SA=="
-	ReferenceCLIShasum    = "af9fece8a9756a00e093f817b3c3083971cc171f"
+	ReferenceCLIVersion   = "2.0.9"
+	ReferenceCLIIntegrity = "sha512-L+DUKBD5HrFctnqZ4a8vofXY7f5+4ukpfw4rSnNbeE9s48lsLOr3vvbaWZCDSR6xkivRYTovQMWKqcli6s8mUQ=="
+	ReferenceCLIShasum    = "88a3847bbd1c0c2e709cbc7a96fae52f9f832a85"
 )
 
 type BackendRequirements struct {
