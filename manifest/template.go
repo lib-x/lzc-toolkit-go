@@ -59,22 +59,19 @@ func Analyze(data []byte) (*Analysis, error) {
 	if err != nil {
 		return nil, err
 	}
+	wholeLineControls := wholeLineControlActions(data, actions)
 	analysis := &Analysis{lineDepth: make(map[int]int)}
 	projected := append([]byte(nil), data...)
 	stack := make([]templateFrame, 0)
 	kinds := make(map[string]struct{})
 	offset := 0
-	nextLine := 1
 
-	for _, action := range actions {
-		for nextLine <= action.line {
-			analysis.lineDepth[nextLine] = len(stack)
-			nextLine++
-		}
+	for actionIndex, action := range actions {
 		standalone := actionIsStandalone(data, action.start, action.end)
 		actionBytes := data[action.start:action.end]
 		kind := actionKind(actionBytes)
-		control := standalone && isControlKind(kind)
+		promotedControl := wholeLineControls[actionIndex]
+		control := (standalone || promotedControl) && isControlKind(kind)
 		depth := len(stack)
 
 		switch kind {
@@ -121,6 +118,15 @@ func Analyze(data []byte) (*Analysis, error) {
 		replacement := []byte(token)
 		if control {
 			replacement = []byte("# " + token)
+			if promotedControl {
+				indentation := lineIndentation(data, action.start)
+				switch kind {
+				case "if", "with", "range":
+					replacement = append(replacement, append([]byte{'\n'}, indentation...)...)
+				case "end":
+					replacement = append(append([]byte{'\n'}, indentation...), replacement...)
+				}
+			}
 		}
 		start := action.start + offset
 		end := action.end + offset
@@ -136,9 +142,7 @@ func Analyze(data []byte) (*Analysis, error) {
 		return nil, templateAnalysisError("manifest.analyze.control", stack[len(stack)-1].line, "unclosed template control block")
 	}
 	sort.Strings(analysis.template.ActionKinds)
-	for lineCount := bytes.Count(data, []byte{'\n'}) + 1; nextLine <= lineCount; nextLine++ {
-		analysis.lineDepth[nextLine] = len(stack)
-	}
+	analysis.lineDepth = projectedLineDepth(projected, analysis.markers)
 	document, err := Parse(projected)
 	if err != nil {
 		return nil, err
@@ -146,6 +150,95 @@ func Analyze(data []byte) (*Analysis, error) {
 	analysis.document = document
 	analysis.template.Present = len(actions) != 0
 	return analysis, nil
+}
+
+func wholeLineControlActions(data []byte, actions []scannedTemplateAction) map[int]bool {
+	promoted := make(map[int]bool)
+	stack := make([]int, 0)
+	for index, action := range actions {
+		kind := actionKind(data[action.start:action.end])
+		switch kind {
+		case "if", "with", "range":
+			stack = append(stack, index)
+		case "end":
+			if len(stack) == 0 {
+				continue
+			}
+			openingIndex := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			opening := actions[openingIndex]
+			if opening.line != action.line || !actionStartsPhysicalLine(data, opening.start) || !actionEndsPhysicalLine(data, action.end) {
+				continue
+			}
+			if hasNestedControlAction(data, actions[openingIndex+1:index]) {
+				continue
+			}
+			promoted[openingIndex] = true
+			promoted[index] = true
+		}
+	}
+	return promoted
+}
+
+func hasNestedControlAction(data []byte, actions []scannedTemplateAction) bool {
+	for _, action := range actions {
+		if isControlKind(actionKind(data[action.start:action.end])) {
+			return true
+		}
+	}
+	return false
+}
+
+func actionStartsPhysicalLine(data []byte, start int) bool {
+	lineStart := bytes.LastIndexByte(data[:start], '\n') + 1
+	return len(bytes.TrimSpace(data[lineStart:start])) == 0
+}
+
+func actionEndsPhysicalLine(data []byte, end int) bool {
+	lineEndOffset := bytes.IndexByte(data[end:], '\n')
+	lineEnd := len(data)
+	if lineEndOffset >= 0 {
+		lineEnd = end + lineEndOffset
+	}
+	return len(bytes.TrimSpace(data[end:lineEnd])) == 0
+}
+
+func lineIndentation(data []byte, offset int) []byte {
+	lineStart := bytes.LastIndexByte(data[:offset], '\n') + 1
+	line := data[lineStart:offset]
+	indentationLength := len(line) - len(bytes.TrimLeft(line, " \t"))
+	return append([]byte(nil), line[:indentationLength]...)
+}
+
+func projectedLineDepth(projected []byte, markers []templateMarker) map[int]int {
+	controls := make(map[string]templateMarker)
+	for _, marker := range markers {
+		if marker.control {
+			controls[string(marker.token)] = marker
+		}
+	}
+	depths := make(map[int]int)
+	depth := 0
+	for index, line := range bytes.Split(projected, []byte{'\n'}) {
+		depths[index+1] = depth
+		trimmed := strings.TrimSpace(string(line))
+		if !strings.HasPrefix(trimmed, "# ") {
+			continue
+		}
+		marker, found := controls[strings.TrimPrefix(trimmed, "# ")]
+		if !found {
+			continue
+		}
+		switch marker.kind {
+		case "if", "with", "range":
+			depth++
+		case "end":
+			if depth > 0 {
+				depth--
+			}
+		}
+	}
+	return depths
 }
 
 // Document returns an independent copy of the projected YAML document.

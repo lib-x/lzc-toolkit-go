@@ -160,6 +160,24 @@ func TestResolveConfigTemplatedManifestAddsStaticSubdomainSubstitution(t *testin
 	}
 }
 
+func TestResolveConfigSupportsInlineConditionalSequenceItem(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "lzc-build.yml", "contentdir: content\n")
+	writeTestFile(t, root, "lzc-manifest.yml", `application:
+  subdomain: openship
+services:
+  api:
+    image: example/api:1.0.0
+    environment:
+      - REQUIRED=true
+      {{if .U.github_client_id}}- GITHUB_CLIENT_ID={{ .U.github_client_id }}{{end}}
+`)
+
+	if _, err := ResolveConfig(context.Background(), ConfigRequest{Root: root}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestResolveConfigRejectsDuplicatePlainManifestMapping(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, root, "lzc-build.yml", "contentdir: ${version}\n")

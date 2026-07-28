@@ -70,6 +70,44 @@ services:
 	}
 }
 
+func TestAnalyzeSupportsInlineConditionAroundWholeSequenceItem(t *testing.T) {
+	t.Parallel()
+	source := []byte(`services:
+  api:
+    environment:
+      - REQUIRED=true
+      {{if .U.client_id}}- CLIENT_ID={{ .U.client_id }}{{end}}
+`)
+
+	analysis, err := manifest.Analyze(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info := analysis.Template(); !info.Present || !info.HasInlineConditions {
+		t.Fatalf("Template() = %#v", info)
+	}
+	projected, err := analysis.Document().Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(projected, []byte(".U.client_id")) {
+		t.Fatalf("projection leaked template body:\n%s", projected)
+	}
+	restored, err := analysis.Restore(projected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, action := range [][]byte{
+		[]byte(`{{if .U.client_id}}`),
+		[]byte(`{{ .U.client_id }}`),
+		[]byte(`{{end}}`),
+	} {
+		if !bytes.Contains(restored, action) {
+			t.Fatalf("restored source is missing %q:\n%s", action, restored)
+		}
+	}
+}
+
 func TestAnalyzePlainYAMLReturnsIndependentDocument(t *testing.T) {
 	t.Parallel()
 	analysis, err := manifest.Analyze([]byte("application:\n  subdomain: original\n"))
