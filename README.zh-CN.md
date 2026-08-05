@@ -553,7 +553,21 @@ func main() {
 
 ### 例子五：登录并提交 LPK
 
-开发者平台认证有两种方式。
+旧版开发者平台会话认证有两种方式。
+
+开发者平台还提供独立的 PAT API。PAT 与旧版 lzc-cli 会话 token 必须保持
+不同语义：`appstore.New` 使用 `/api/v3/developer`、`X-User-Token` 和
+`userToken` Cookie；`appstore.NewPAT` 使用 `/sdk/v3/developer` 和
+`X-API-Token`：
+
+```go
+client, err := appstore.NewPAT(appstore.Options{
+    Token: auth.StaticToken(os.Getenv("LZC_API_TOKEN")),
+})
+```
+
+`NewPAT` 会禁用重定向，也不会把 PAT 转发到其他来源。SDK 不会复制或同步
+PAT 与会话 token 的值。
 
 #### 方式一：账号密码换 token
 

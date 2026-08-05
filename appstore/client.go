@@ -1,5 +1,6 @@
-// Package appstore implements LazyCat developer platform APIs used by
-// lzc-cli 2.0.9. It does not execute Docker commands.
+// Package appstore implements LazyCat developer platform APIs. New retains
+// the lzc-cli 2.0.9 session-token protocol; NewPAT selects the PAT SDK API.
+// The package does not execute Docker commands.
 package appstore
 
 import (

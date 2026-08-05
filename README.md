@@ -553,7 +553,21 @@ The lzc-cli 2.0.9 and Go SDK `CopyImageRequest` contracts have no source Registr
 
 ### Example 5: Log in and submit an LPK
 
-Developer-platform authentication supports two flows.
+Legacy developer-platform session authentication supports two flows.
+
+The developer platform also exposes a separate PAT API. Keep its credential
+distinct from the legacy lzc-cli session token: `appstore.New` uses
+`/api/v3/developer`, `X-User-Token`, and the `userToken` cookie, while
+`appstore.NewPAT` uses `/sdk/v3/developer` and `X-API-Token`:
+
+```go
+client, err := appstore.NewPAT(appstore.Options{
+    Token: auth.StaticToken(os.Getenv("LZC_API_TOKEN")),
+})
+```
+
+`NewPAT` disables redirects and does not forward the PAT to another origin.
+The SDK does not copy or synchronize PAT and session-token values.
 
 #### Flow 1: Exchange username and password for a token
 
