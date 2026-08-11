@@ -569,6 +569,19 @@ client, err := appstore.NewPAT(appstore.Options{
 `NewPAT` 会禁用重定向，也不会把 PAT 转发到其他来源。SDK 不会复制或同步
 PAT 与会话 token 的值。
 
+可用 `WaitingReviewVersion` 查询指定应用当前是否有审核中版本。服务端返回
+404 时，方法返回 `found == false`，不会把它当作错误：
+
+```go
+version, found, err := client.WaitingReviewVersion(ctx, "cloud.lazycat.example")
+if err != nil {
+    return err
+}
+if found {
+    fmt.Printf("%s 正在审核中\n", version)
+}
+```
+
 #### 方式一：账号密码换 token
 
 `auth.Client.Login` 会向 `https://account.lazycat.cloud/api/login/signin` 提交账号和密码，并返回 `Session.Token`。密码不会保存；配置了 `TokenStore` 时只保存 token。

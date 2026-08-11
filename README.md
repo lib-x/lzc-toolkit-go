@@ -569,6 +569,20 @@ client, err := appstore.NewPAT(appstore.Options{
 `NewPAT` disables redirects and does not forward the PAT to another origin.
 The SDK does not copy or synchronize PAT and session-token values.
 
+Use `WaitingReviewVersion` to check whether an exact package currently has a
+version under review. A 404 response is represented as `found == false`, not
+as an error:
+
+```go
+version, found, err := client.WaitingReviewVersion(ctx, "cloud.lazycat.example")
+if err != nil {
+    return err
+}
+if found {
+    fmt.Printf("%s is awaiting review\n", version)
+}
+```
+
 #### Flow 1: Exchange username and password for a token
 
 `auth.Client.Login` submits credentials to `https://account.lazycat.cloud/api/login/signin` and returns `Session.Token`. The password is not stored. When a `TokenStore` is configured, only the token is saved.

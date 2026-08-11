@@ -3,7 +3,7 @@ package version
 import "runtime/debug"
 
 const (
-	SDKVersion            = "0.4.0"
+	SDKVersion            = "0.5.0"
 	ReferenceCLIPackage   = "@lazycatcloud/lzc-cli"
 	ReferenceCLIVersion   = "2.0.9"
 	ReferenceCLIIntegrity = "sha512-L+DUKBD5HrFctnqZ4a8vofXY7f5+4ukpfw4rSnNbeE9s48lsLOr3vvbaWZCDSR6xkivRYTovQMWKqcli6s8mUQ=="

@@ -80,20 +80,28 @@ func (client *Client) newRequestAt(ctx context.Context, method, target string, b
 }
 
 func (client *Client) do(request *http.Request) ([]byte, error) {
+	body, _, err := client.doOptional(request, false)
+	return body, err
+}
+
+func (client *Client) doOptional(request *http.Request, notFoundIsMissing bool) ([]byte, bool, error) {
 	response, err := client.httpClient.Do(request)
 	if err != nil {
 		if request.Context().Err() != nil {
-			return nil, storeError(lpkgo.CodeCancelled, "appstore.request", request.Context().Err())
+			return nil, false, storeError(lpkgo.CodeCancelled, "appstore.request", request.Context().Err())
 		}
-		return nil, storeRemoteError("appstore.request", err, 0)
+		return nil, false, storeRemoteError("appstore.request", err, 0)
 	}
 	defer response.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
 	if err != nil {
-		return nil, storeRemoteError("appstore.response", err, response.StatusCode)
+		return nil, false, storeRemoteError("appstore.response", err, response.StatusCode)
 	}
 	if len(body) > maxResponseBytes {
-		return nil, storeRemoteError("appstore.response", errors.New("response exceeds limit"), response.StatusCode)
+		return nil, false, storeRemoteError("appstore.response", errors.New("response exceeds limit"), response.StatusCode)
+	}
+	if notFoundIsMissing && response.StatusCode == http.StatusNotFound {
+		return nil, false, nil
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		code := lpkgo.CodeRemoteUnavailable
@@ -102,9 +110,9 @@ func (client *Client) do(request *http.Request) ([]byte, error) {
 		} else if response.StatusCode == http.StatusForbidden {
 			code = lpkgo.CodePermissionDenied
 		}
-		return nil, &lpkgo.Error{Code: code, Op: "appstore.response", StatusCode: response.StatusCode, Retryable: response.StatusCode >= 500, Cause: errors.New("App Store request rejected")}
+		return nil, false, &lpkgo.Error{Code: code, Op: "appstore.response", StatusCode: response.StatusCode, Retryable: response.StatusCode >= 500, Cause: errors.New("App Store request rejected")}
 	}
-	return body, nil
+	return body, true, nil
 }
 
 func storeError(code lpkgo.Code, op string, cause error) error {
